@@ -1,23 +1,24 @@
 
-import type { BreachData, NavItem, SettingsData } from '@/types';
+import type { NavItem, SettingsData } from '@/types';
 import { LayoutDashboard, Settings, ShieldAlert, Info, HardDriveDownload } from 'lucide-react';
 
 export const APP_NAME = 'BreachWatch';
-export const DOWNLOADED_FILES_STORAGE_KEY = 'breachWatchDownloadedFiles';
+// DOWNLOADED_FILES_STORAGE_KEY is no longer primary source, but can be kept for other local preferences.
+export const DOWNLOADED_FILES_STORAGE_KEY = 'breachWatchLocalPreferences'; 
 
 export const NAV_LINKS: NavItem[] = [
   {
-    title: 'Dashboard',
+    title: 'Dashboard', // Shows files discovered by backend crawlers
     href: '/dashboard',
     icon: LayoutDashboard,
   },
   {
-    title: 'Downloaded Files',
+    title: 'File Records', // Shows all DownloadedFile entries from backend DB
     href: '/downloaded-files',
     icon: HardDriveDownload,
   },
   {
-    title: 'Settings',
+    title: 'Settings', // Configure new crawl jobs
     href: '/settings',
     icon: Settings,
   },
@@ -28,139 +29,10 @@ export const NAV_LINKS: NavItem[] = [
   }
 ];
 
-export const MOCK_BREACH_DATA: BreachData[] = [
-  { 
-    id: 'mock-1', 
-    sourceUrl: 'https://example.com/forum/thread1', 
-    fileUrl: 'https://cdn.example.com/data_dump.txt', 
-    fileType: 'txt', 
-    dateFound: new Date(Date.now() - 86400000 * 1).toISOString(), 
-    keywords: ['passwords', 'users', 'credentials'],
-    status: 'new',
-  },
-  { 
-    id: 'mock-2', 
-    sourceUrl: 'https://another-site.org/leaks', 
-    fileUrl: 'https://another-site.org/leaks/customer_db.sql.gz', 
-    fileType: 'sql.gz', 
-    dateFound: new Date(Date.now() - 86400000 * 2).toISOString(), 
-    keywords: ['database', 'customer_info', 'backup'],
-    status: 'reviewed',
-  },
-  { 
-    id: 'mock-3', 
-    sourceUrl: 'http://public-files.net/archive', 
-    fileUrl: 'http://public-files.net/archive/full_backup_2023.zip', 
-    fileType: 'zip', 
-    dateFound: new Date(Date.now() - 86400000 * 5).toISOString(), 
-    keywords: ['backup', 'archive', 'confidential_data'],
-    status: 'new',
-  },
-  { 
-    id: 'mock-4', 
-    sourceUrl: 'https://pastebin.com/xyz123', 
-    fileUrl: 'https://pastebin.com/raw/xyz123', 
-    fileType: 'json', 
-    dateFound: new Date(Date.now() - 86400000 * 1).toISOString(), 
-    keywords: ['api_keys', 'tokens', 'credentials.json'],
-    status: 'ignored',
-  },
-  { 
-    id: 'mock-5', 
-    sourceUrl: 'https://internal-docs.com/data', 
-    fileUrl: 'https://internal-docs.com/data/employee_records.xlsx', 
-    fileType: 'xlsx', 
-    dateFound: new Date(Date.now() - 86400000 * 10).toISOString(), 
-    keywords: ['employee_data', 'salary_info', 'PII'],
-    status: 'new',
-  },
-   { 
-    id: 'mock-6', 
-    sourceUrl: 'https://s3.public-bucket.aws/data', 
-    fileUrl: 'https://s3.public-bucket.aws/data/user_details.csv', 
-    fileType: 'csv', 
-    dateFound: new Date(Date.now() - 86400000 * 3).toISOString(), 
-    keywords: ['user_details', 'email', 'address'],
-    status: 'reviewed',
-  },
-  { 
-    id: 'mock-7', 
-    sourceUrl: 'ftp://ftp.company.com/backups', 
-    fileUrl: 'ftp://ftp.company.com/backups/website_backup.tar.gz', 
-    fileType: 'tar.gz', 
-    dateFound: new Date(Date.now() - 86400000 * 7).toISOString(), 
-    keywords: ['website_backup', 'source_code', 'database'],
-    status: 'new',
-  },
-  {
-    id: 'mock-8',
-    sourceUrl: 'https://research-data.edu/public',
-    fileUrl: 'https://research-data.edu/public/study_participants.db',
-    fileType: 'db',
-    dateFound: new Date(Date.now() - 86400000 * 15).toISOString(),
-    keywords: ['participants', 'research_study', 'sensitive_data'],
-    status: 'new',
-  },
-  {
-    id: 'mock-9',
-    sourceUrl: 'https://dev-server.com/tmp/',
-    fileUrl: 'https://dev-server.com/tmp/old_config.bak',
-    fileType: 'bak',
-    dateFound: new Date(Date.now() - 86400000 * 4).toISOString(),
-    keywords: ['config_backup', 'server_settings', 'credentials'],
-    status: 'ignored',
-  },
-  {
-    id: 'mock-10',
-    sourceUrl: 'https://data-terbuka.go.id/expose/datawarga.csv',
-    fileUrl: 'https://data-terbuka.go.id/expose/datawarga.csv',
-    fileType: 'csv',
-    dateFound: new Date(Date.now() - 86400000 * 2).toISOString(),
-    keywords: ['NIK', 'nama_lengkap', 'alamat', 'no_ktp', 'data_penduduk'],
-    status: 'new',
-  },
-  {
-    id: 'mock-11',
-    sourceUrl: 'https://kebocoran-data.web.id/files/kk_database.sql',
-    fileUrl: 'https://kebocoran-data.web.id/files/kk_database.sql',
-    fileType: 'sql',
-    dateFound: new Date(Date.now() - 86400000 * 6).toISOString(),
-    keywords: ['kartu_keluarga', 'nomor_kk', 'anggota_keluarga', 'database_warga'],
-    status: 'reviewed',
-  },
-  {
-    id: 'mock-12',
-    sourceUrl: 'https://paste.leakedsource.info/view/randomidpaste',
-    fileUrl: 'https://paste.leakedsource.info/raw/randomidpaste',
-    fileType: 'txt',
-    dateFound: new Date(Date.now() - 86400000 * 1).toISOString(),
-    keywords: ['nomor_induk_kependudukan', 'tanggal_lahir', 'bpjs_kesehatan', 'npwp_pribadi'],
-    status: 'new',
-  }
-];
-
-// Helper to generate unique IDs for mock data for refresh simulation
-export const generateNewMockEntry = (): BreachData => {
-  const timestamp = Date.now();
-  const randomSuffix = Math.random().toString(36).substring(2, 9);
-  const fileTypes = ['txt', 'csv', 'sql', 'zip', 'json', 'db', 'log', 'bak', 'tar.gz', '7z', 'conf'];
-  const statuses = ['new', 'reviewed', 'ignored'] as BreachData['status'][];
-  
-  return {
-    id: `breach-${timestamp}-${randomSuffix}`,
-    sourceUrl: `https://discovered-site.com/path/${randomSuffix}`,
-    fileUrl: `https://storage.discovered-site.com/files/breach_data_${timestamp}.${fileTypes[Math.floor(Math.random() * fileTypes.length)]}`,
-    fileType: fileTypes[Math.floor(Math.random() * fileTypes.length)],
-    dateFound: new Date().toISOString(),
-    keywords: ['sensitive_info', `passwords_${randomSuffix}`, 'confidential', ['NIK', 'no_ktp', 'internal_docs'][Math.floor(Math.random()*3)] ],
-    status: statuses[Math.floor(Math.random() * statuses.length)],
-  };
-};
-
-
+// Default settings for the frontend form
 export const DEFAULT_SETTINGS: SettingsData = {
   keywords: "password, secret, api_key, token, credential, private_key, backup, dump, leak, user, admin, config, NIK, no_ktp, nama_lengkap, nomor_induk_kependudukan, kartu_keluarga, nomor_kk, tempat_lahir, tanggal_lahir, alamat, bpjs, npwp, no_hp, email, rahasia, data_pribadi, identitas, pengguna, sandi, database, internal, konfidensial, data_nasabah, data_karyawan, data_mahasiswa, data_pasien",
-  fileExtensions: ".txt, .csv, .sql, .json, .xlsx, .db, .bak, .zip, .gz, .tar.gz, .7z, .rar, .log, .config, .yml, .yaml, .env, .pem, .key, .crt, .p12, .pfx, .doc, .docx, .pdf, .xls, .ppt, .pptx, .mdb, .sqlite",
+  fileExtensions: "txt, csv, sql, json, xlsx, db, bak, zip, gz, tar.gz, 7z, rar, log, config, yml, yaml, env, pem, key, crt, p12, pfx, doc, docx, pdf, xls, ppt, pptx, mdb, sqlite", // Store without leading dots for form
   seedUrls: "https://pastebin.com\n" +
             "https://gist.github.com\n" +
             "https://sitedata.web.id/records/\n" +
@@ -371,8 +243,8 @@ export const FILE_TYPE_EXTENSIONS: { [key: string]: string[] } = {
   spreadsheet: ['csv', 'xls', 'xlsx', 'ods'],
   document: ['doc', 'docx', 'pdf', 'odt', 'ppt', 'pptx'],
   config: ['env', 'pem', 'key', 'crt', 'p12', 'pfx', 'gitconfig', 'ora', 'web.config', 'jks', 'keystore', 'kdbx', 'htpasswd', 'htaccess'],
-  unknown: [],
+  image: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'tiff'], // Added more image types
+  audio: ['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a'], // Added more audio types
+  video: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv'], // Added more video types
+  unknown: [], // For files where type couldn't be determined
 };
-
-
-    

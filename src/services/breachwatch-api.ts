@@ -1,0 +1,137 @@
+// src/services/breachwatch-api.ts
+import type { SettingsData, DownloadedFileEntry, CrawlJob } from '@/types';
+import { NEXT_PUBLIC_BACKEND_API_URL } from '@/config/config';
+
+// Helper to construct full API URLs
+const getApiUrl = (path: string) => `${NEXT_PUBLIC_BACKEND_API_URL}/api/v1${path}`;
+
+// Helper for making API requests
+async function apiRequest<T>(
+  path: string,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
+  body?: any
+): Promise<T> {
+  const url = getApiUrl(path);
+  const options: RequestInit = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      // Add other headers like Authorization if needed
+    },
+  };
+
+  if (body) {
+    options.body = JSON.stringify(body);
+  }
+
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      const errorData = await response.text().catch(() => 'Failed to parse error response');
+      console.error(`API Error: ${response.status} ${response.statusText} for ${method} ${url}`, errorData);
+      throw new Error(`API request failed: ${response.status} ${response.statusText}. Details: ${errorData}`);
+    }
+    if (response.status === 204 || response.headers.get('content-length') === '0') { // Handle No Content
+        return null as T; // Or appropriate value for no content
+    }
+    return response.json() as Promise<T>;
+  } catch (error) {
+    console.error(`Network or other error during API request to ${url}:`, error);
+    throw error; // Re-throw to be handled by the caller
+  }
+}
+
+// --- CrawlJob Endpoints ---
+
+export interface BackendCrawlSettings {
+  keywords: string[];
+  file_extensions: string[];
+  seed_urls: string[];
+  search_dorks: string[];
+  crawl_depth: number;
+  respect_robots_txt: boolean;
+  request_delay_seconds: number;
+  use_search_engines: boolean;
+  max_results_per_dork?: number;
+  max_concurrent_requests_per_domain?: number;
+}
+
+export interface CreateCrawlJobPayload {
+  name?: string;
+  settings: BackendCrawlSettings;
+}
+
+export const createCrawlJob = async (payload: CreateCrawlJobPayload): Promise<CrawlJob> => {
+  return apiRequest<CrawlJob>('/crawl/jobs', 'POST', payload);
+};
+
+export const getCrawlJobs = async (skip: number = 0, limit: number = 100): Promise<CrawlJob[]> => {
+  return apiRequest<CrawlJob[]>(`/crawl/jobs?skip=${skip}&limit=${limit}`);
+};
+
+export const getCrawlJob = async (jobId: string): Promise<CrawlJob> => {
+  return apiRequest<CrawlJob>(`/crawl/jobs/${jobId}`);
+};
+
+// --- DownloadedFile Endpoints ---
+
+export const getDownloadedFiles = async (jobId?: string, skip: number = 0, limit: number = 100): Promise<DownloadedFileEntry[]> => {
+  let path = '/crawl/results/downloaded?';
+  if (jobId) {
+    path += `job_id=${jobId}&`;
+  }
+  path += `skip=${skip}&limit=${limit}`;
+  return apiRequest<DownloadedFileEntry[]>(path);
+};
+
+// Note: The backend currently doesn't have a specific endpoint to delete a single downloaded file by its ID
+// and also delete its physical file. This is a placeholder for such an endpoint.
+// The backend's crud.delete_downloaded_file only deletes the DB record.
+export const deleteDownloadedFileRecord = async (fileId: string): Promise<void> => {
+  // This endpoint would need to be implemented in the backend:
+  // e.g., DELETE /api/v1/crawl/results/downloaded/{file_id}
+  // For now, we'll call a non-existent path to show the intent.
+  // In a real scenario, this would require backend changes.
+  return apiRequest<void>(`/crawl/results/downloaded/${fileId}`, 'DELETE');
+};
+
+
+// --- File Content Download ---
+// This function would fetch the actual file content from the backend.
+// The backend needs an endpoint like GET /api/v1/files/download/{file_id_or_path}
+// For now, this is a conceptual placeholder. Frontend will use file_url for direct access.
+/*
+export const downloadFileContent = async (fileId: string): Promise<Blob> => {
+  const url = getApiUrl(`/files/download/${fileId}`); // Backend endpoint needed
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download file: ${response.statusText}`);
+  }
+  return response.blob();
+};
+*/
+
+// Helper to parse frontend settings strings into backend-compatible arrays
+export const parseSettingsForBackend = (settings: SettingsData): BackendCrawlSettings => {
+  const parseStringList = (str: string | undefined, separator: RegExp = /,|\n/): string[] => {
+    return str ? str.split(separator).map(s => s.trim()).filter(s => s) : [];
+  };
+  
+  const parseFileExtensions = (str: string | undefined): string[] => {
+     return str ? str.split(/,|\n/).map(s => s.trim().replace(/^\./, '')).filter(s => s) : [];
+  }
+
+  return {
+    keywords: parseStringList(settings.keywords),
+    file_extensions: parseFileExtensions(settings.fileExtensions),
+    seed_urls: parseStringList(settings.seedUrls),
+    search_dorks: parseStringList(settings.searchDorks),
+    crawl_depth: settings.crawlDepth,
+    respect_robots_txt: settings.respectRobotsTxt,
+    request_delay_seconds: settings.requestDelay,
+    // These might not be in frontend SettingsData, provide defaults or make them optional
+    use_search_engines: true, // Default, or add to SettingsData
+    max_results_per_dork: 20, // Default, or add to SettingsData
+    max_concurrent_requests_per_domain: 2, // Default, or add to SettingsData
+  };
+};
