@@ -1,0 +1,56 @@
+
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: breachwatch_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-breachwatchuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-breachwatchpass}
+      POSTGRES_DB: ${DB_NAME:-breachwatchdb}
+    volumes:
+      - postgres_data_local:/var/lib/postgresql/data
+    ports:
+      # You can uncomment the next line if you need to access PostgreSQL directly from your host machine
+      # - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-breachwatchuser} -d $${POSTGRES_DB:-breachwatchdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - breachwatch_net
+
+  backend:
+    build:
+      context: ./breachwatch_backend
+      dockerfile: Dockerfile
+    container_name: breachwatch_backend_service
+    restart: unless-stopped
+    command: uvicorn breachwatch.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./breachwatch_backend:/app 
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./breachwatch_backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Ensures Python output is sent straight to terminal without being first buffered.
+      PYTHONUNBUFFERED: 1 
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # The DATABASE_URL in .env should point to 'db' as host:
+      # Example: DATABASE_URL=postgresql://breachwatchuser:breachwatchpass@db:5432/breachwatchdb
+    networks:
+      - breachwatch_net
+
+volumes:
+  postgres_data_local: # Defines a named volume for data persistence
+
+networks:
+  breachwatch_net:
+    driver: bridge
