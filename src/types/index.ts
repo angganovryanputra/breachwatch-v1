@@ -33,3 +33,4 @@ export interface DownloadedFileEntry extends BreachData {
   downloadedAt: string; // ISO string format of when it was processed for download
   // simulatedPath?: string; // Future: could store a simulated local path
 }
+

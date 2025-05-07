@@ -18,40 +18,59 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip"
+} from "@/components/ui/tooltip";
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+
+const settingsSchema = z.object({
+  keywords: z.string().min(1, { message: "Keywords are required." }),
+  fileExtensions: z.string().min(1, { message: "File extensions are required." }),
+  seedUrls: z.string().min(1, { message: "Seed URLs are required." }),
+  searchDorks: z.string().min(1, { message: "Search dorks are required." }),
+  crawlDepth: z.number().min(0).max(10),
+  respectRobotsTxt: z.boolean(),
+  requestDelay: z.number().min(0).max(10),
+});
+
+type SettingsFormValues = z.infer<typeof settingsSchema>;
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<SettingsData>(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+
+  const form = useForm<SettingsFormValues>({
+    resolver: zodResolver(settingsSchema),
+    defaultValues: DEFAULT_SETTINGS,
+    mode: "onChange",
+  });
+
+  const { handleSubmit, control, reset, formState: { isSubmitting, isValid } } = form;
 
   // In a real app, you'd fetch existing settings from a backend or localStorage
   useEffect(() => {
     const storedSettings = localStorage.getItem('breachWatchSettings');
     if (storedSettings) {
-      setSettings(JSON.parse(storedSettings));
+      form.reset(JSON.parse(storedSettings));
     }
-  }, []);
+  }, [form]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setSettings(prev => ({ ...prev, [name]: value }));
-  };
 
-  const handleSwitchChange = (name: keyof SettingsData, checked: boolean) => {
-    setSettings(prev => ({ ...prev, [name]: checked }));
-  };
-  
-  const handleSliderChange = (name: keyof SettingsData, value: number[]) => {
-    setSettings(prev => ({ ...prev, [name]: value[0] }));
-  };
+  const handleResetDefaults = () => {
+    localStorage.removeItem('breachWatchSettings');
+    form.reset(DEFAULT_SETTINGS);
+    toast({
+      title: 'Settings Reset',
+      description: 'Configuration has been reset to default values.',
+      variant: 'default'
+    });
+  }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (values: SettingsFormValues) => {
     setIsLoading(true);
     // Simulate saving settings
     setTimeout(() => {
-      localStorage.setItem('breachWatchSettings', JSON.stringify(settings));
+      localStorage.setItem('breachWatchSettings', JSON.stringify(values));
       setIsLoading(false);
       toast({
         title: 'Settings Saved',
@@ -60,86 +79,96 @@ export default function SettingsPage() {
     }, 1000);
   };
 
-  const handleResetDefaults = () => {
-    setSettings(DEFAULT_SETTINGS);
-    localStorage.removeItem('breachWatchSettings');
-    toast({
-      title: 'Settings Reset',
-      description: 'Configuration has been reset to default values.',
-      variant: 'default'
-    });
-  }
 
   return (
-    <AppShell>
-      <Card className="shadow-xl">
-        <CardHeader>
-          <CardTitle className="text-2xl flex items-center">
-            <SettingsIcon className="h-7 w-7 mr-2 text-accent" />
-            Configuration Settings
-          </CardTitle>
-          <CardDescription>
-            Adjust parameters for web crawling, file identification, and keyword matching.
-            Changes will take effect on the next crawl.
-          </CardDescription>
-        </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="keywords" className="flex items-center">
-                  Keywords
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        <p className="max-w-xs">Comma-separated keywords to search for within URLs, page titles, link text, and potentially file content. E.g., leak, dump, database, users, passwords.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </Label>
-                <Textarea
-                  id="keywords"
-                  name="keywords"
-                  value={settings.keywords}
-                  onChange={handleInputChange}
-                  placeholder="e.g., leak, dump, database, users, passwords"
-                  rows={3}
-                  className="resize-y"
-                />
+    
+      <AppShell>
+        <Card className="shadow-xl">
+          <CardHeader>
+            <CardTitle className="text-2xl flex items-center">
+              <SettingsIcon className="h-7 w-7 mr-2 text-accent" />
+              Configuration Settings
+            </CardTitle>
+            <CardDescription>
+              Adjust parameters for web crawling, file identification, and keyword matching.
+              Changes will take effect on the next crawl.
+            </CardDescription>
+          </CardHeader>
+          <form onSubmit={handleSubmit(onSubmit)}>
+            <CardContent className="space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="keywords" className="flex items-center">
+                    Keywords
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <p className="max-w-xs">Comma-separated keywords to search for within URLs, page titles, link text, and potentially file content. E.g., leak, dump, database, users, passwords.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </Label>
+                  <Controller
+                    name="keywords"
+                    control={control}
+                    render={({ field }) => (
+                      <Textarea
+                        id="keywords"
+                        placeholder="e.g., leak, dump, database, users, passwords"
+                        rows={3}
+                        className="resize-y"
+                        {...field}
+                      />
+                    )}
+                  />
+                  {form.formState.errors.keywords && (
+                    <p className="text-sm text-destructive">
+                      {form.formState.errors.keywords.message}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fileExtensions" className="flex items-center">
+                    File Extensions
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <p className="max-w-xs">Comma-separated file extensions to identify. E.g., .txt, .csv, .sql, .json, .zip.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </Label>
+                  <Controller
+                    name="fileExtensions"
+                    control={control}
+                    render={({ field }) => (
+                      <Textarea
+                        id="fileExtensions"
+                        placeholder="e.g., .txt, .csv, .sql, .json, .zip"
+                        rows={3}
+                        className="resize-y"
+                        {...field}
+                      />
+                    )}
+                  />
+                  {form.formState.errors.fileExtensions && (
+                    <p className="text-sm text-destructive">
+                      {form.formState.errors.fileExtensions.message}
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="fileExtensions" className="flex items-center">
-                  File Extensions
-                   <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        <p className="max-w-xs">Comma-separated file extensions to identify. E.g., .txt, .csv, .sql, .json, .zip.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </Label>
-                <Textarea
-                  id="fileExtensions"
-                  name="fileExtensions"
-                  value={settings.fileExtensions}
-                  onChange={handleInputChange}
-                  placeholder="e.g., .txt, .csv, .sql, .json, .zip"
-                  rows={3}
-                  className="resize-y"
-                />
-              </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="seedUrls" className="flex items-center">
-                Seed URLs
-                 <TooltipProvider>
+              <div className="space-y-2">
+                <Label htmlFor="seedUrls" className="flex items-center">
+                  Seed URLs
+                  <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
@@ -149,22 +178,31 @@ export default function SettingsPage() {
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-              </Label>
-              <Textarea
-                id="seedUrls"
-                name="seedUrls"
-                value={settings.seedUrls}
-                onChange={handleInputChange}
-                placeholder="e.g., https://example.com (one URL per line)"
-                rows={4}
-                className="resize-y"
-              />
-            </div>
+                </Label>
+                <Controller
+                  name="seedUrls"
+                  control={control}
+                  render={({ field }) => (
+                    <Textarea
+                      id="seedUrls"
+                      placeholder="e.g., https://example.com (one URL per line)"
+                      rows={4}
+                      className="resize-y"
+                      {...field}
+                    />
+                  )}
+                />
+                {form.formState.errors.seedUrls && (
+                  <p className="text-sm text-destructive">
+                    {form.formState.errors.seedUrls.message}
+                  </p>
+                )}
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="searchDorks" className="flex items-center">
-                Search Engine Dorks
-                <TooltipProvider>
+              <div className="space-y-2">
+                <Label htmlFor="searchDorks" className="flex items-center">
+                  Search Engine Dorks
+                  <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
@@ -174,79 +212,113 @@ export default function SettingsPage() {
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-              </Label>
-              <Textarea
-                id="searchDorks"
-                name="searchDorks"
-                value={settings.searchDorks}
-                onChange={handleInputChange}
-                placeholder='e.g., filetype:csv "password" (one dork per line)'
-                rows={4}
-                className="resize-y"
-              />
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-              <div className="space-y-3">
-                <Label htmlFor="crawlDepth" className="flex items-center">
-                  Crawl Depth: {settings.crawlDepth}
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        <p className="max-w-xs">How many links deep to follow from seed URLs. 0 means only scan the seed URLs themselves.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
                 </Label>
-                <Slider
-                  id="crawlDepth"
-                  name="crawlDepth"
-                  min={0}
-                  max={10}
-                  step={1}
-                  value={[settings.crawlDepth]}
-                  onValueChange={(value) => handleSliderChange('crawlDepth', value)}
+                <Controller
+                  name="searchDorks"
+                  control={control}
+                  render={({ field }) => (
+                    <Textarea
+                      id="searchDorks"
+                      placeholder='e.g., filetype:csv "password" (one dork per line)'
+                      rows={4}
+                      className="resize-y"
+                      {...field}
+                    />
+                  )}
                 />
+                {form.formState.errors.searchDorks && (
+                  <p className="text-sm text-destructive">
+                    {form.formState.errors.searchDorks.message}
+                  </p>
+                )}
               </div>
-              <div className="space-y-3">
-                <Label htmlFor="requestDelay" className="flex items-center">
-                  Request Delay: {settings.requestDelay}s
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        <p className="max-w-xs">Delay in seconds between HTTP requests to be polite to servers.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </Label>
-                 <Slider
-                  id="requestDelay"
-                  name="requestDelay"
-                  min={0}
-                  max={10}
-                  step={0.5}
-                  value={[settings.requestDelay]}
-                  onValueChange={(value) => handleSliderChange('requestDelay', value)}
-                />
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                <div className="space-y-3">
+                  <Label htmlFor="crawlDepth" className="flex items-center">
+                    Crawl Depth: {form.watch("crawlDepth")}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <p className="max-w-xs">How many links deep to follow from seed URLs. 0 means only scan the seed URLs themselves.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </Label>
+                  <Controller
+                    name="crawlDepth"
+                    control={control}
+                    render={({ field }) => (
+                      <Slider
+                        id="crawlDepth"
+                        min={0}
+                        max={10}
+                        step={1}
+                        onValueChange={(value) => field.onChange(value[0])}
+                        value={[field.value]}
+                      />
+                    )}
+                  />
+                  {form.formState.errors.crawlDepth && (
+                    <p className="text-sm text-destructive">
+                      {form.formState.errors.crawlDepth.message}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  <Label htmlFor="requestDelay" className="flex items-center">
+                    Request Delay: {form.watch("requestDelay")}s
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <p className="max-w-xs">Delay in seconds between HTTP requests to be polite to servers.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </Label>
+                  <Controller
+                    name="requestDelay"
+                    control={control}
+                    render={({ field }) => (
+                      <Slider
+                        id="requestDelay"
+                        min={0}
+                        max={10}
+                        step={0.5}
+                        onValueChange={(value) => field.onChange(value[0])}
+                        value={[field.value]}
+                      />
+                    )}
+                  />
+                  {form.formState.errors.requestDelay && (
+                    <p className="text-sm text-destructive">
+                      {form.formState.errors.requestDelay.message}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
 
-            <div className="flex items-center space-x-3">
-              <Switch
-                id="respectRobotsTxt"
-                name="respectRobotsTxt"
-                checked={settings.respectRobotsTxt}
-                onCheckedChange={(checked) => handleSwitchChange('respectRobotsTxt', checked)}
-              />
-              <Label htmlFor="respectRobotsTxt" className="flex items-center">
-                Respect robots.txt
-                <TooltipProvider>
+              <div className="flex items-center space-x-3">
+                <Controller
+                  name="respectRobotsTxt"
+                  control={control}
+                  render={({ field }) => (
+                    <Switch
+                      id="respectRobotsTxt"
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  )}
+                />
+                <Label htmlFor="respectRobotsTxt" className="flex items-center">
+                  Respect robots.txt
+                  <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
@@ -256,21 +328,22 @@ export default function SettingsPage() {
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-              </Label>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-end space-x-3 border-t pt-6">
-            <Button type="button" variant="outline" onClick={handleResetDefaults} disabled={isLoading}>
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Reset to Defaults
-            </Button>
-            <Button type="submit" disabled={isLoading}>
-              <Save className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              {isLoading ? 'Saving...' : 'Save Settings'}
-            </Button>
-          </CardFooter>
-        </form>
-      </Card>
-    </AppShell>
+                </Label>
+              </div>
+            </CardContent>
+            <CardFooter className="flex justify-end space-x-3 border-t pt-6">
+              <Button type="button" variant="outline" onClick={handleResetDefaults} disabled={isSubmitting}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reset to Defaults
+              </Button>
+              <Button type="submit" disabled={isSubmitting || !isValid}>
+                <Save className={`mr-2 h-4 w-4 ${isSubmitting ? 'animate-spin' : ''}`} />
+                {isSubmitting ? 'Saving...' : 'Save Settings'}
+              </Button>
+            </CardFooter>
+          </form>
+        </Card>
+      </AppShell>
+    
   );
 }
