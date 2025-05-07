@@ -1,0 +1,41 @@
+# Default application configuration
+# This can be overridden by environment variables or other config files.
+
+app_name: "BreachWatch Backend"
+version: "0.1.0"
+
+# Search engine dorks and target extensions can be extensive and might be better managed
+# via the frontend settings and passed to the backend, or stored in the database.
+# For initial setup, some examples can be here.
+
+target_file_extensions:
+  - ".txt"
+  - ".csv"
+  - ".sql"
+  - ".json"
+  - ".zip"
+  - ".tar.gz"
+  - ".db"
+  - ".bak"
+  - ".log"
+  - ".config" # and many more from frontend
+
+keywords_for_analysis:
+  - "password"
+  - "secret"
+  - "api_key"
+  - "credential"
+  - "NIK" # and many more from frontend
+
+# Politeness settings for crawler
+crawler:
+  default_delay_seconds: 1.0 # Default delay between requests to the same domain
+  max_concurrent_requests_per_domain: 2
+  max_crawl_depth: 3 # Can be overridden by specific crawl jobs
+
+output_locations:
+  downloaded_files: "data/downloaded_files" # Relative to backend root
+  metadata_db_path: "data/metadata_db/breachwatch_metadata.sqlite" # Example for SQLite, but we're using PostgreSQL
+
+# Add other configurations as needed
+# e.g., API keys for external services, proxy settings
