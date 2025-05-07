@@ -1,6 +1,6 @@
 
 import type { NavItem, SettingsData } from '@/types';
-import { LayoutDashboard, Settings, ShieldAlert, Info, HardDriveDownload } from 'lucide-react';
+import { LayoutDashboard, Settings, ShieldAlert, Info, HardDriveDownload, BookOpen } from 'lucide-react';
 
 export const APP_NAME = 'BreachWatch';
 // DOWNLOADED_FILES_STORAGE_KEY is no longer primary source, but can be kept for other local preferences.
@@ -26,6 +26,11 @@ export const NAV_LINKS: NavItem[] = [
     title: 'Ethical Guidelines',
     href: '/guidelines',
     icon: Info,
+  },
+  {
+    title: 'Documentation',
+    href: '/documentation',
+    icon: BookOpen,
   }
 ];
 
@@ -248,3 +253,6 @@ export const FILE_TYPE_EXTENSIONS: { [key: string]: string[] } = {
   video: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv'], // Added more video types
   unknown: [], // For files where type couldn't be determined
 };
+
+
+    
