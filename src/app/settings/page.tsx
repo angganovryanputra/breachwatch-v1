@@ -1,0 +1,276 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { AppShell } from '@/components/layout/app-shell';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
+import { useToast } from '@/hooks/use-toast';
+import { DEFAULT_SETTINGS } from '@/lib/constants';
+import type { SettingsData } from '@/types';
+import { Save, RotateCcw, Settings as SettingsIcon, HelpCircle } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+
+export default function SettingsPage() {
+  const [settings, setSettings] = useState<SettingsData>(DEFAULT_SETTINGS);
+  const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
+
+  // In a real app, you'd fetch existing settings from a backend or localStorage
+  useEffect(() => {
+    const storedSettings = localStorage.getItem('breachWatchSettings');
+    if (storedSettings) {
+      setSettings(JSON.parse(storedSettings));
+    }
+  }, []);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setSettings(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSwitchChange = (name: keyof SettingsData, checked: boolean) => {
+    setSettings(prev => ({ ...prev, [name]: checked }));
+  };
+  
+  const handleSliderChange = (name: keyof SettingsData, value: number[]) => {
+    setSettings(prev => ({ ...prev, [name]: value[0] }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    // Simulate saving settings
+    setTimeout(() => {
+      localStorage.setItem('breachWatchSettings', JSON.stringify(settings));
+      setIsLoading(false);
+      toast({
+        title: 'Settings Saved',
+        description: 'Your configuration has been updated successfully.',
+      });
+    }, 1000);
+  };
+
+  const handleResetDefaults = () => {
+    setSettings(DEFAULT_SETTINGS);
+    localStorage.removeItem('breachWatchSettings');
+    toast({
+      title: 'Settings Reset',
+      description: 'Configuration has been reset to default values.',
+      variant: 'default'
+    });
+  }
+
+  return (
+    <AppShell>
+      <Card className="shadow-xl">
+        <CardHeader>
+          <CardTitle className="text-2xl flex items-center">
+            <SettingsIcon className="h-7 w-7 mr-2 text-accent" />
+            Configuration Settings
+          </CardTitle>
+          <CardDescription>
+            Adjust parameters for web crawling, file identification, and keyword matching.
+            Changes will take effect on the next crawl.
+          </CardDescription>
+        </CardHeader>
+        <form onSubmit={handleSubmit}>
+          <CardContent className="space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="keywords" className="flex items-center">
+                  Keywords
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        <p className="max-w-xs">Comma-separated keywords to search for within URLs, page titles, link text, and potentially file content. E.g., leak, dump, database, users, passwords.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </Label>
+                <Textarea
+                  id="keywords"
+                  name="keywords"
+                  value={settings.keywords}
+                  onChange={handleInputChange}
+                  placeholder="e.g., leak, dump, database, users, passwords"
+                  rows={3}
+                  className="resize-y"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="fileExtensions" className="flex items-center">
+                  File Extensions
+                   <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        <p className="max-w-xs">Comma-separated file extensions to identify. E.g., .txt, .csv, .sql, .json, .zip.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </Label>
+                <Textarea
+                  id="fileExtensions"
+                  name="fileExtensions"
+                  value={settings.fileExtensions}
+                  onChange={handleInputChange}
+                  placeholder="e.g., .txt, .csv, .sql, .json, .zip"
+                  rows={3}
+                  className="resize-y"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="seedUrls" className="flex items-center">
+                Seed URLs
+                 <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        <p className="max-w-xs">Starting URLs for crawling, one per line. E.g., https://example.com, https://forum.example.org.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+              </Label>
+              <Textarea
+                id="seedUrls"
+                name="seedUrls"
+                value={settings.seedUrls}
+                onChange={handleInputChange}
+                placeholder="e.g., https://example.com (one URL per line)"
+                rows={4}
+                className="resize-y"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="searchDorks" className="flex items-center">
+                Search Engine Dorks
+                <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        <p className="max-w-xs">Advanced search queries for search engines, one per line. E.g., filetype:csv "password", intitle:"index of" "backup.sql".</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+              </Label>
+              <Textarea
+                id="searchDorks"
+                name="searchDorks"
+                value={settings.searchDorks}
+                onChange={handleInputChange}
+                placeholder='e.g., filetype:csv "password" (one dork per line)'
+                rows={4}
+                className="resize-y"
+              />
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              <div className="space-y-3">
+                <Label htmlFor="crawlDepth" className="flex items-center">
+                  Crawl Depth: {settings.crawlDepth}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        <p className="max-w-xs">How many links deep to follow from seed URLs. 0 means only scan the seed URLs themselves.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </Label>
+                <Slider
+                  id="crawlDepth"
+                  name="crawlDepth"
+                  min={0}
+                  max={10}
+                  step={1}
+                  value={[settings.crawlDepth]}
+                  onValueChange={(value) => handleSliderChange('crawlDepth', value)}
+                />
+              </div>
+              <div className="space-y-3">
+                <Label htmlFor="requestDelay" className="flex items-center">
+                  Request Delay: {settings.requestDelay}s
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        <p className="max-w-xs">Delay in seconds between HTTP requests to be polite to servers.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </Label>
+                 <Slider
+                  id="requestDelay"
+                  name="requestDelay"
+                  min={0}
+                  max={10}
+                  step={0.5}
+                  value={[settings.requestDelay]}
+                  onValueChange={(value) => handleSliderChange('requestDelay', value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              <Switch
+                id="respectRobotsTxt"
+                name="respectRobotsTxt"
+                checked={settings.respectRobotsTxt}
+                onCheckedChange={(checked) => handleSwitchChange('respectRobotsTxt', checked)}
+              />
+              <Label htmlFor="respectRobotsTxt" className="flex items-center">
+                Respect robots.txt
+                <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        <p className="max-w-xs">If enabled, the crawler will attempt to follow rules specified in a website's robots.txt file. Disabling this may be impolite or violate terms of service.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+              </Label>
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-end space-x-3 border-t pt-6">
+            <Button type="button" variant="outline" onClick={handleResetDefaults} disabled={isLoading}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Reset to Defaults
+            </Button>
+            <Button type="submit" disabled={isLoading}>
+              <Save className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              {isLoading ? 'Saving...' : 'Save Settings'}
+            </Button>
+          </CardFooter>
+        </form>
+      </Card>
+    </AppShell>
+  );
+}
