@@ -136,8 +136,42 @@ export const MOCK_BREACH_DATA: BreachData[] = [
 export const DEFAULT_SETTINGS: SettingsData = {
   keywords: "password, secret, api_key, token, credential, private_key, backup, dump, leak, user, admin, config, NIK, no_ktp, nama_lengkap, nomor_induk_kependudukan, kartu_keluarga, nomor_kk, tempat_lahir, tanggal_lahir, alamat, bpjs, npwp, no_hp, email",
   fileExtensions: ".txt, .csv, .sql, .json, .xlsx, .db, .bak, .zip, .gz, .tar.gz, .7z, .rar, .log, .config, .yml, .yaml, .env",
-  seedUrls: "https://pastebin.com\nhttps://gist.github.com\nhttps://sitedata.web.id/records/",
-  searchDorks: 'intitle:"index of" "backup"\nfiletype:sql "passwords"\nsite:*.s3.amazonaws.com "dump.sql"\nfiletype:csv "NIK" OR "no_ktp"\nintitle:"index of" "database" "indonesia"',
+  seedUrls: "https://pastebin.com\n" +
+            "https://gist.github.com\n" +
+            "https://sitedata.web.id/records/\n" +
+            "https://ghostbin.co/\n" +
+            "https://throwbin.io/\n" +
+            "https://pastelink.net/\n" +
+            "https://justpaste.it/\n" +
+            "https://controlc.com/\n" +
+            "https://0bin.net/\n" +
+            "https://dev.to/search?q=leak%20indonesia\n" +
+            "https://medium.com/search?q=data%20breach%20indonesia\n" +
+            "https://anonfiles.com/\n" +
+            "https://bayfiles.com/\n" +
+            "https://data.go.id/\n" +
+            "https://www.kaskus.co.id/forum/search?q=kebocoran%20data\n" +
+            "https://glasp.co/paste",
+  searchDorks: 'intitle:"index of" "backup"\n' +
+               'filetype:sql "passwords"\n' +
+               'site:*.s3.amazonaws.com "dump.sql"\n' +
+               'filetype:csv "NIK" OR "no_ktp"\n' +
+               'intitle:"index of" "database" "indonesia"\n' +
+               'site:pastebin.com intext:"NIK" OR intext:"No. KTP" OR intext:"Kartu Tanda Penduduk" "Indonesia"\n' +
+               'site:scribd.com "NIK" OR "KTP" "Indonesia" filetype:pdf OR filetype:doc OR filetype:xls\n' +
+               'filetype:xls OR filetype:xlsx "daftar nama" "NIK" "Indonesia"\n' +
+               'inurl:.go.id filetype:csv OR filetype:xls "data penduduk" OR "data pemilih"\n' +
+               'site:drive.google.com "share" "NIK" OR "KTP" "Indonesia"\n' +
+               'site:*.id intitle:"index of" "database" OR "backup" OR "data"\n' +
+               'intext:"Nomor Induk Kependudukan" OR intext:"Kartu Keluarga" filetype:pdf OR filetype:doc site:*.id\n' +
+               'filetype:json "nama_lengkap" "alamat" "no_hp" site:*.id\n' +
+               '"Rahasia Negara" OR "Dokumen Rahasia" filetype:pdf site:.go.id\n' +
+               'site:*.cloud.google.com OR site:*.digitaloceanspaces.com "backup.zip" OR "database.sql" "indonesia"\n' +
+               'site:storage.googleapis.com "data_sensitif" "indonesia"\n' +
+               'ext:bkf OR ext:dat OR ext:sql OR ext:zip "backup" "database" "indonesia"\n' +
+               '"DATABASE DUMP" "user" "password" site:*.id\n' +
+               'site:glasp.co intext:"username" intext:"password" "indonesia"\n' +
+               'inurl:ftp -inurl:(http|https) site:*.id "backup" OR "confidential"',
   crawlDepth: 2,
   respectRobotsTxt: true,
   requestDelay: 1,
