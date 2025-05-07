@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -9,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileTypeIcon } from '@/components/common/file-type-icon';
-import { Eye, Trash2, RefreshCcw, Download, Filter, Search, AlertTriangle, FileDown } from 'lucide-react';
+import { Eye, Trash2, RefreshCcw, FileDown, Filter, Search, AlertTriangle, FileQuestion } from 'lucide-react';
 import type { BreachData } from '@/types';
 import { MOCK_BREACH_DATA } from '@/lib/constants';
 import { format, parseISO } from 'date-fns';
@@ -26,6 +27,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from '@/components/ui/toast';
+
 
 const ITEMS_PER_PAGE = 10;
 
@@ -57,10 +60,10 @@ export default function DashboardPage() {
         fileUrl: `https://newsource.com/files/new_breach_${Math.floor(Math.random() * 100)}.zip`,
         fileType: ['txt', 'csv', 'sql', 'zip', 'json'][Math.floor(Math.random() * 5)],
         dateFound: new Date().toISOString(),
-        keywords: ['new_data', `random_${Math.random().toString(36).substring(5)}`],
+        keywords: ['new_data', `random_${Math.random().toString(36).substring(5)}`, 'NIK', 'no_ktp'],
         status: 'new'
       };
-      setBreachData(prevData => [newEntry, ...prevData.slice(0,14)]); // Keep max 15 items for demo
+      setBreachData(prevData => [newEntry, ...prevData.slice(0, MOCK_BREACH_DATA.length + 1)]); 
       setIsLoading(false);
       toast({ title: "Data Refreshed", description: "Latest breach data loaded." });
     }, 1500);
@@ -70,7 +73,7 @@ export default function DashboardPage() {
     // In a real app, this would trigger a secure download, possibly via backend
     toast({
       title: "Download Initiated (Simulated)",
-      description: `Preparing to download ${fileName} from ${fileUrl}. This is a simulation.`,
+      description: `Preparing to download ${fileName}. This is a simulation.`,
       action: <ToastAction altText="Okay">Okay</ToastAction>,
     });
     console.log(`Simulating download for: ${fileUrl}`);
@@ -340,3 +343,6 @@ export default function DashboardPage() {
     </AppShell>
   );
 }
+
+
+    

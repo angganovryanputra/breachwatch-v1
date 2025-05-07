@@ -1,4 +1,5 @@
-import type { BreachData, NavItem } from '@/types';
+
+import type { BreachData, NavItem, SettingsData } from '@/types';
 import { LayoutDashboard, Settings, ShieldAlert, Info } from 'lucide-react';
 
 export const APP_NAME = 'BreachWatch';
@@ -102,14 +103,41 @@ export const MOCK_BREACH_DATA: BreachData[] = [
     dateFound: new Date(Date.now() - 86400000 * 4).toISOString(),
     keywords: ['config_backup', 'server_settings', 'credentials'],
     status: 'ignored',
+  },
+  {
+    id: '10',
+    sourceUrl: 'https://data-terbuka.go.id/expose/datawarga.csv',
+    fileUrl: 'https://data-terbuka.go.id/expose/datawarga.csv',
+    fileType: 'csv',
+    dateFound: new Date(Date.now() - 86400000 * 2).toISOString(),
+    keywords: ['NIK', 'nama_lengkap', 'alamat', 'no_ktp', 'data_penduduk'],
+    status: 'new',
+  },
+  {
+    id: '11',
+    sourceUrl: 'https://kebocoran-data.web.id/files/kk_database.sql',
+    fileUrl: 'https://kebocoran-data.web.id/files/kk_database.sql',
+    fileType: 'sql',
+    dateFound: new Date(Date.now() - 86400000 * 6).toISOString(),
+    keywords: ['kartu_keluarga', 'nomor_kk', 'anggota_keluarga', 'database_warga'],
+    status: 'reviewed',
+  },
+  {
+    id: '12',
+    sourceUrl: 'https://paste.leakedsource.info/view/randomidpaste',
+    fileUrl: 'https://paste.leakedsource.info/raw/randomidpaste',
+    fileType: 'txt',
+    dateFound: new Date(Date.now() - 86400000 * 1).toISOString(),
+    keywords: ['nomor_induk_kependudukan', 'tanggal_lahir', 'bpjs_kesehatan', 'npwp_pribadi'],
+    status: 'new',
   }
 ];
 
-export const DEFAULT_SETTINGS = {
-  keywords: "password, secret, api_key, token, credential, private_key, backup, dump, leak, user, admin, config",
+export const DEFAULT_SETTINGS: SettingsData = {
+  keywords: "password, secret, api_key, token, credential, private_key, backup, dump, leak, user, admin, config, NIK, no_ktp, nama_lengkap, nomor_induk_kependudukan, kartu_keluarga, nomor_kk, tempat_lahir, tanggal_lahir, alamat, bpjs, npwp, no_hp, email",
   fileExtensions: ".txt, .csv, .sql, .json, .xlsx, .db, .bak, .zip, .gz, .tar.gz, .7z, .rar, .log, .config, .yml, .yaml, .env",
-  seedUrls: "https://pastebin.com\nhttps://gist.github.com",
-  searchDorks: 'intitle:"index of" "backup"\nfiletype:sql "passwords"\nsite:*.s3.amazonaws.com "dump.sql"',
+  seedUrls: "https://pastebin.com\nhttps://gist.github.com\nhttps://sitedata.web.id/records/",
+  searchDorks: 'intitle:"index of" "backup"\nfiletype:sql "passwords"\nsite:*.s3.amazonaws.com "dump.sql"\nfiletype:csv "NIK" OR "no_ktp"\nintitle:"index of" "database" "indonesia"',
   crawlDepth: 2,
   respectRobotsTxt: true,
   requestDelay: 1,
@@ -126,3 +154,6 @@ export const FILE_TYPE_EXTENSIONS: { [key: string]: string[] } = {
   config: ['env', 'pem', 'key', 'crt', 'cer', 'p12', 'pfx'],
   unknown: [],
 };
+
+
+    
