@@ -29,23 +29,31 @@ class DomainLimiter:
         self.last_request_time: float = 0
         self.active_requests: int = 0
         self._lock = asyncio.Lock()
+        logger.debug(f"DomainLimiter initialized with delay: {delay_seconds}s, max_concurrent: {max_concurrent}")
 
     async def acquire(self):
         async with self._lock:
             while self.active_requests >= self.max_concurrent:
+                logger.debug(f"DomainLimiter: Max concurrent ({self.max_concurrent}) reached, waiting...")
                 await asyncio.sleep(0.1) # Wait if max concurrent requests are active
 
             current_time = time.monotonic()
             time_since_last_request = current_time - self.last_request_time
             if time_since_last_request < self.delay_seconds:
-                await asyncio.sleep(self.delay_seconds - time_since_last_request)
+                wait_time = self.delay_seconds - time_since_last_request
+                logger.debug(f"DomainLimiter: Delaying for {wait_time:.2f}s")
+                await asyncio.sleep(wait_time)
             
             self.last_request_time = time.monotonic()
             self.active_requests += 1
+            logger.debug(f"DomainLimiter: Acquired. Active requests: {self.active_requests}")
+
 
     async def release(self):
         async with self._lock:
             self.active_requests -= 1
+            logger.debug(f"DomainLimiter: Released. Active requests: {self.active_requests}")
+
 
 class MasterCrawler:
     """
@@ -61,9 +69,7 @@ class MasterCrawler:
         self.user_agent = config_settings.DEFAULT_USER_AGENT
         self.request_timeout = config_settings.REQUEST_TIMEOUT
         
-        # Initialize HTTP client (consider using a session for connection pooling)
-        # Limits can be configured more granularly if needed
-        limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
+        limits = httpx.Limits(max_keepalive_connections=20, max_connections=100) # General client limits
         self.http_client = httpx.AsyncClient(
             headers={"User-Agent": self.user_agent},
             timeout=self.request_timeout,
@@ -73,50 +79,47 @@ class MasterCrawler:
         logger.info(f"MasterCrawler for job {self.job_id} initialized.")
         logger.info(f"Keywords: {self.settings.keywords[:5]}..., Extensions: {self.settings.file_extensions[:5]}...")
         logger.info(f"Crawl Depth: {self.settings.crawl_depth}, Dorks: {len(self.settings.search_dorks)}")
+        logger.info(f"Request Delay: {self.settings.request_delay_seconds}s, Max Concurrent per Domain: {self.settings.max_concurrent_requests_per_domain}")
 
 
     async def _get_domain_limiter(self, url: str) -> DomainLimiter:
         domain = urlparse(url).netloc
+        if not domain: # Should not happen for valid http/https URLs
+            logger.warning(f"Could not parse domain from URL: {url}. Using default limiter.")
+            domain = "__default__"
+
         if domain not in self.domain_limiters:
-            # Potentially customize delay per domain from config or dynamic adjustment
             self.domain_limiters[domain] = DomainLimiter(
-                delay_seconds=self.settings.request_delay_seconds, # Use job-specific delay
-                max_concurrent=2 # Default max concurrent, can be from config_settings.crawler.max_concurrent_requests_per_domain
+                delay_seconds=self.settings.request_delay_seconds,
+                max_concurrent=self.settings.max_concurrent_requests_per_domain or 2 # Fallback if not set
             )
         return self.domain_limiters[domain]
 
-    async def fetch_page_content(self, url: str) -> Optional[Tuple[str, str]]:
-        """Fetches page content and content type, respecting robots.txt and politeness."""
-        if url in self.visited_urls:
-            logger.debug(f"URL already visited: {url}")
-            return None
-        self.visited_urls.add(url)
+    async def fetch_page_content(self, url: str) -> Optional[Tuple[bytes, str]]: # Return bytes
+        """Fetches page content and content type, respecting robots.txt and politeness. Returns (content_bytes, content_type_header)"""
+        # Visited check is now at the start of process_url
+        # if url in self.visited_urls:
+        #     logger.debug(f"URL already visited (fetch_page_content): {url}")
+        #     return None
+        # self.visited_urls.add(url) # Added in process_url
 
-        if self.settings.respect_robots_txt:
-            # TODO: Implement robots.txt checking (e.g. using urllib.robotparser or a library)
-            # For now, assume allowed
-            pass
+        # TODO: Implement actual robots.txt checking more thoroughly if self.settings.respect_robots_txt.
+        # This would involve fetching /robots.txt for the domain and parsing it.
+        # For now, we assume allowed if respect_robots_txt is True, which isn't strictly correct.
+        # A library like `reppy` or `robotexclusionrulesparser` could be used.
         
         limiter = await self._get_domain_limiter(url)
         await limiter.acquire()
         try:
             logger.debug(f"Fetching URL: {url} with User-Agent: {self.user_agent}")
             response = await self.http_client.get(url)
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            response.raise_for_status() 
             
             content_type = response.headers.get("content-type", "").lower()
+            content_bytes = await response.aread() # Read full content as bytes
             
-            # Heuristic to check if content is likely HTML before trying to parse
-            if "text/html" in content_type:
-                return await response.aread(), content_type # Read as bytes, then decode
-            elif any(ext in url.lower() for ext in self.settings.file_extensions):
-                 # If it's a target file extension, we might want to process it directly
-                 # For now, we assume it's binary or non-HTML text.
-                 # Downloader will handle it.
-                 return await response.aread(), content_type # Return bytes and content_type
-            else:
-                logger.debug(f"Skipping non-HTML content type {content_type} for URL: {url} (unless it's a target file)")
-                return None # Or return bytes if all content should be processed
+            logger.debug(f"Fetched {url}, Status: {response.status_code}, Content-Type: {content_type}, Size: {len(content_bytes)} bytes")
+            return content_bytes, content_type
 
         except httpx.RequestError as e:
             logger.warning(f"HTTP request error fetching {url}: {e}")
@@ -139,151 +142,201 @@ class MasterCrawler:
         4. If HTML: extracts links, checks for keywords in links/page, continues crawl if depth allows.
         Yields DownloadedFileSchema for each potential breach found and downloaded.
         """
+        if url in self.visited_urls:
+            logger.debug(f"URL already visited: {url}, skipping.")
+            return
+        self.visited_urls.add(url)
+
         if current_depth > self.settings.crawl_depth:
             logger.debug(f"Max depth {self.settings.crawl_depth} reached for {url}")
             return
 
         logger.info(f"Processing URL: {url} at depth {current_depth}")
-        content_data = await self.fetch_page_content(url)
+        content_data_tuple = await self.fetch_page_content(url)
 
-        if not content_data:
+        if not content_data_tuple:
             return
         
-        raw_content_bytes, content_type = content_data
+        raw_content_bytes, content_type_header = content_data_tuple
 
-        # 1. File Identification (based on URL, Content-Type, and potentially magic numbers)
-        file_meta = file_identifier.identify_file_type_and_name(url, content_type, raw_content_bytes)
+        file_meta = file_identifier.identify_file_type_and_name(url, content_type_header, raw_content_bytes[:1024]) # Pass first KB for magic
         
-        is_target_file = file_meta.extension.lower() in [ext.lstrip('.').lower() for ext in self.settings.file_extensions]
+        is_target_file_extension = file_meta.extension.lower() in [ext.lstrip('.').lower() for ext in self.settings.file_extensions]
 
-        if is_target_file:
+        if is_target_file_extension:
             logger.info(f"Target file type '{file_meta.extension}' identified: {url}")
-            # 2. Keyword Matching (for file content if possible, or filename/metadata)
-            # For simplicity now, let's assume keyword matching on filename or metadata
-            # Advanced: stream content and match, or download and analyze
             
-            keywords_in_filename = keyword_matcher.match_keywords_in_text(file_meta.name, self.settings.keywords)
-            # Add more checks if needed, e.g. on snippets of content if text-based
+            keywords_in_filename_or_metadata = keyword_matcher.match_keywords_in_text(file_meta.name, self.settings.keywords)
+            # TODO: Advanced content-based keyword matching for text-based files can be added here.
+            # For now, download is triggered by filename/metadata keywords.
             
-            if keywords_in_filename: # Or other criteria indicating a potential breach
-                logger.info(f"Keywords {keywords_in_filename} found in/for file: {url}")
-                
-                # 3. Download File (simulated or actual) and record
+            if keywords_in_filename_or_metadata:
+                logger.info(f"Keywords {keywords_in_filename_or_metadata} found in/for file: {url}. Proceeding to download.")
                 try:
-                    download_result = await downloader.download_and_store_file(
-                        self.http_client, # Pass the client
+                    # Using the passed http_client for the downloader as well
+                    download_result_schema = await downloader.download_and_store_file(
+                        self.http_client,
                         url,
-                        file_meta,
+                        file_meta, # Pass full FileMetadata
                         self.job_id,
-                        self.settings.keywords # Pass relevant keywords for the record
+                        list(keywords_in_filename_or_metadata), # Pass keywords that triggered
+                        raw_content_bytes if len(raw_content_bytes) < (5 * 1024 * 1024) else None # Pass content if small, for efficiency
                     )
-                    if download_result:
-                        # Store in DB via CRUD
-                        db_downloaded_file = crud.create_downloaded_file(db=self.db, downloaded_file=download_result)
-                        logger.info(f"Recorded downloaded file: {db_downloaded_file.id} from {url}")
-                        yield db_downloaded_file # Yield the DB schema
+                    if download_result_schema:
+                        db_downloaded_file = crud.create_downloaded_file(db=self.db, downloaded_file=download_result_schema)
+                        logger.info(f"Recorded downloaded file in DB: {db_downloaded_file.id} from {url}")
+                        yield db_downloaded_file
                 except Exception as e:
                     logger.error(f"Failed to download or record file {url}: {e}", exc_info=True)
         
-        # 4. If HTML content, extract links and continue crawl
-        if "text/html" in content_type:
+        # If HTML content, extract links and continue crawl, regardless of whether it was also a "target file" (e.g. .html in extensions)
+        # This allows crawling HTML files that might also be listed as downloadable targets.
+        if "text/html" in content_type_header:
             try:
-                html_content = raw_content_bytes.decode('utf-8', errors='replace') # Decode bytes to string
+                html_content_str = raw_content_bytes.decode('utf-8', errors='replace')
             except UnicodeDecodeError:
                 logger.warning(f"Could not decode HTML content from {url} as UTF-8.")
-                return
+                # Attempt fallback decoding if critical, or just return
+                try:
+                    html_content_str = raw_content_bytes.decode('latin-1', errors='replace')
+                    logger.info(f"Successfully decoded HTML from {url} using latin-1 fallback.")
+                except UnicodeDecodeError:
+                    logger.error(f"Failed to decode HTML content from {url} with UTF-8 and latin-1.")
+                    return # Cannot process further without decodable HTML
 
-            soup = BeautifulSoup(html_content, 'html.parser')
-            
-            # Keyword check in page title or meta description (optional, can be noisy)
-            page_text_for_keywords = soup.title.string if soup.title else ""
-            # meta_desc = soup.find("meta", attrs={"name": "description"})
-            # if meta_desc and meta_desc.get("content"):
-            #    page_text_for_keywords += " " + meta_desc.get("content")
-            
-            # keywords_in_page = keyword_matcher.match_keywords_in_text(page_text_for_keywords, self.settings.keywords)
-            # if keywords_in_page:
-            #    logger.info(f"Keywords {keywords_in_page} found in page metadata: {url}")
-            #    # Could record this as a "source_url" of interest even if no direct file found yet
+            # Optional: Check for keywords in page text/metadata
+            # soup = BeautifulSoup(html_content_str, 'html.parser')
+            # page_text_for_keywords = soup.title.string if soup.title else ""
+            # ... (keyword matching logic for page content)
 
-            # Extract links for further crawling
             if current_depth < self.settings.crawl_depth:
-                links_on_page = recursive.extract_links_from_html(html_content, url)
-                tasks = []
-                for link_url in links_on_page:
-                    if link_url not in self.visited_urls:
-                        # Check if keywords are in link text or URL itself
-                        # link_text = "" # Need to get link text from soup for this specific link
-                        # keywords_in_link = keyword_matcher.match_keywords_in_text(link_url + " " + link_text, self.settings.keywords)
-                        # if keywords_in_link:
-                        #    logger.info(f"Keywords {keywords_in_link} found in link: {link_url}")
-                        
-                        tasks.append(self.process_url(link_url, current_depth + 1))
+                links_on_page = recursive.extract_links_from_html(html_content_str, url)
+                logger.debug(f"Found {len(links_on_page)} links on {url} to process for next depth.")
                 
-                # Process sub-links concurrently
-                for task_gen in asyncio.as_completed(tasks):
-                    async for found_file_schema in await task_gen: # Iterate over async generator results
-                         yield found_file_schema
+                sub_tasks = []
+                for link_url in links_on_page:
+                    # The visited_urls check at the start of process_url will handle duplicates
+                    sub_tasks.append(self.process_url(link_url, current_depth + 1))
+                
+                # Process sub-links and yield their findings
+                for completed_task_gen in asyncio.as_completed(sub_tasks):
+                    try:
+                        async for found_file_schema in await completed_task_gen:
+                            yield found_file_schema
+                    except Exception as e_inner:
+                        logger.error(f"Error processing a sub-link generator from {url}: {e_inner}", exc_info=True)
 
+    async def _run_generator_and_put_to_queue(self, generator: AsyncGenerator, queue: asyncio.Queue):
+        """Helper to run an async generator and put its items into an asyncio.Queue."""
+        try:
+            async for item in generator:
+                await queue.put(item)
+        except Exception as e:
+            logger.error(f"Error in sub-generator task: {e}", exc_info=True)
+            # Optionally put an error marker or specific error object in the queue
+            # await queue.put(e) 
+        finally:
+            pass # The generator is exhausted or errored
 
     async def start_crawling(self) -> AsyncGenerator[schemas.DownloadedFileSchema, None]:
-        """
-        Main entry point to start the crawling process.
-        Iterates through seed URLs and search engine dorks.
-        Yields DownloadedFileSchema for each potential breach found and downloaded.
-        """
         crud.update_crawl_job_status(db=self.db, job_id=self.job_id, status="running")
-        logger.info(f"Starting crawl for job {self.job_id}")
+        logger.info(f"Starting deep crawl for job {self.job_id}")
 
-        # Process Seed URLs
-        seed_url_tasks = []
-        for seed_url in self.settings.seed_urls:
-            seed_url_tasks.append(self.process_url(str(seed_url), 0)) # Start at depth 0
-        
-        # Process Search Engine Dorks
-        dork_tasks = []
-        if self.settings.use_search_engines:
+        initial_urls_to_process: Set[str] = set()
+
+        # 1. Collect Seed URLs
+        for seed_url_obj in self.settings.seed_urls:
+            seed_url_str = str(seed_url_obj)
+            if seed_url_str not in self.visited_urls: # Basic initial check
+                initial_urls_to_process.add(seed_url_str)
+            else:
+                logger.debug(f"Seed URL {seed_url_str} already in initial visited set, skipping as a direct start point.")
+        logger.info(f"Collected {len(initial_urls_to_process)} unique seed URLs.")
+
+
+        # 2. Collect URLs from Search Engine Dorks concurrently
+        if self.settings.use_search_engines and self.settings.search_dorks:
+            logger.info(f"Executing {len(self.settings.search_dorks)} search dorks...")
+            dork_fetch_tasks = []
             for dork in self.settings.search_dorks:
-                logger.info(f"Executing search dork: {dork}")
-                try:
-                    # search_engine_driver would internally use http_client or its own
-                    # and should also yield URLs to be processed or directly process them.
-                    # For now, let's assume it yields URLs.
-                    async for dork_result_url in search_engine_driver.execute_dork(
+                dork_fetch_tasks.append(
+                    search_engine_driver.execute_dork(
                         dork, 
                         self.http_client, 
                         max_results=self.settings.max_results_per_dork or 20
-                    ):
-                        if dork_result_url not in self.visited_urls:
-                             # Dork results are typically direct file links or highly relevant pages
-                             # Process them at depth 0 or 1 depending on strategy
-                            dork_tasks.append(self.process_url(dork_result_url, 0))
-                except Exception as e:
-                    logger.error(f"Error executing dork '{dork}': {e}", exc_info=True)
-        
-        # Combine all initial tasks and process them
-        all_initial_tasks = seed_url_tasks + dork_tasks
-        
-        # Use asyncio.gather for top-level tasks, but process_url itself handles recursion
-        # and yields results as they are found.
-        # Since process_url is an async generator, we need to iterate through its results.
-        
-        async def run_and_yield(task_generator):
-            async for item in task_generator:
-                yield item
+                    )
+                )
+            
+            dork_results_urls_temp: List[List[str]] = await asyncio.gather(*[self._collect_async_gen(gen) for gen in dork_fetch_tasks], return_exceptions=True)
 
-        gathered_generators = [run_and_yield(gen) for gen in all_initial_tasks]
+            for i, dork_url_list_or_exc in enumerate(dork_results_urls_temp):
+                dork_query = self.settings.search_dorks[i]
+                if isinstance(dork_url_list_or_exc, Exception):
+                    logger.error(f"Error executing dork '{dork_query}': {dork_url_list_or_exc}")
+                    continue
+                
+                added_from_dork = 0
+                for dork_url in dork_url_list_or_exc:
+                    if dork_url not in self.visited_urls and dork_url not in initial_urls_to_process:
+                        initial_urls_to_process.add(dork_url)
+                        added_from_dork +=1
+                logger.info(f"Dork '{dork_query}' yielded {len(dork_url_list_or_exc)} URLs, {added_from_dork} new added to process queue.")
+        
+        logger.info(f"Total unique initial URLs to process (seeds + dorks): {len(initial_urls_to_process)}")
 
-        for completed_generator_task in asyncio.as_completed(gathered_generators):
+        if not initial_urls_to_process:
+            logger.warning(f"No initial URLs to process for job {self.job_id}. Crawl will stop.")
+            crud.update_crawl_job_status(db=self.db, job_id=self.job_id, status="completed_empty") # Or a new status
+            await self.http_client.aclose()
+            return
+
+        # 3. Start processing initial URLs
+        # Create a queue to hold results from all concurrent process_url calls
+        results_queue = asyncio.Queue()
+        
+        # Keep track of active tasks to know when all initial processing paths are done
+        active_tasks_count = len(initial_urls_to_process)
+        
+        async def task_wrapper(url: str, queue: asyncio.Queue, depth: int):
+            nonlocal active_tasks_count
             try:
-                async for found_file in await completed_generator_task:
-                    yield found_file
+                async for item in self.process_url(url, depth):
+                    await queue.put(item)
             except Exception as e:
-                logger.error(f"Error in a top-level crawl task for job {self.job_id}: {e}", exc_info=True)
+                logger.error(f"Error in task_wrapper for URL {url}: {e}", exc_info=True)
+            finally:
+                active_tasks_count -= 1
+                if active_tasks_count == 0:
+                    await queue.put(None) # Sentinel to signal completion of all initial tasks
+
+        # Launch tasks for each initial URL
+        for url in initial_urls_to_process:
+            # Depth 0 for initial URLs from seeds/dorks
+            asyncio.create_task(task_wrapper(url, results_queue, 0))
+
+        # Consume from the queue until all tasks are done and sentinel is received
+        while True:
+            item = await results_queue.get()
+            if item is None: # Sentinel received
+                results_queue.task_done() # Signal that this "None" item is processed
+                break
+            yield item
+            results_queue.task_done()
 
         crud.update_crawl_job_status(db=self.db, job_id=self.job_id, status="completed")
-        logger.info(f"Crawl job {self.job_id} finished processing initial tasks.")
-        await self.http_client.aclose() # Close the HTTP client session
+        logger.info(f"Crawl job {self.job_id} finished processing all tasks.")
+        await self.http_client.aclose()
+
+    async def _collect_async_gen(self, agen: AsyncGenerator[str, None]) -> List[str]:
+        """Helper to collect all items from an async generator into a list."""
+        items = []
+        try:
+            async for item in agen:
+                items.append(item)
+        except Exception as e:
+            logger.error(f"Error collecting from async generator: {e}", exc_info=True)
+            # Depending on policy, you might want to re-raise or just return collected items so far
+        return items
 
 # Example of how it might be called by the API endpoint's background task
 # async def run_crawl_job_task(job_id: uuid.UUID, settings_dict: dict, db: Session):

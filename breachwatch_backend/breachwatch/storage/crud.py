@@ -27,9 +27,10 @@ def create_crawl_job(db: Session, crawl_job_in: schemas.CrawlJobCreateSchema) ->
         settings_search_dorks=crawl_job_in.settings.search_dorks,
         settings_crawl_depth=crawl_job_in.settings.crawl_depth,
         settings_respect_robots_txt=crawl_job_in.settings.respect_robots_txt,
-        settings_request_delay_seconds=int(crawl_job_in.settings.request_delay_seconds), # Assuming int storage
+        settings_request_delay_seconds=crawl_job_in.settings.request_delay_seconds, # Store as float
         settings_use_search_engines=crawl_job_in.settings.use_search_engines,
-        settings_max_results_per_dork=crawl_job_in.settings.max_results_per_dork
+        settings_max_results_per_dork=crawl_job_in.settings.max_results_per_dork,
+        settings_max_concurrent_requests_per_domain=crawl_job_in.settings.max_concurrent_requests_per_domain
     )
     db.add(db_crawl_job)
     db.commit()

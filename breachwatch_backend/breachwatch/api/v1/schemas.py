@@ -14,6 +14,7 @@ class CrawlSettingsSchema(BaseModel):
     request_delay_seconds: float = Field(default=1.0, ge=0, le=10)
     use_search_engines: bool = True # Whether to use search engine dorks
     max_results_per_dork: Optional[int] = Field(default=20, ge=1)
+    max_concurrent_requests_per_domain: Optional[int] = Field(default=2, ge=1, le=10, description="Maximum concurrent requests to a single domain.")
 
 class GlobalSettingsSchema(CrawlSettingsSchema):
     # Potentially add other global settings here, like output paths, API keys, etc.
