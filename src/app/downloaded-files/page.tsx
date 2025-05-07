@@ -10,9 +10,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileTypeIcon } from '@/components/common/file-type-icon';
-import { Eye, Trash2, RefreshCcw, FileDown, Filter, Search, AlertTriangle, FileQuestion, HardDriveDownload } from 'lucide-react';
-import type { BreachData, DownloadedFileEntry } from '@/types';
-import { MOCK_BREACH_DATA, DOWNLOADED_FILES_STORAGE_KEY, generateNewMockEntry } from '@/lib/constants';
+import { Trash2, Search, Filter, FileQuestion, HardDriveDownload, Eye, FileDown, ExternalLink } from 'lucide-react';
+import type { DownloadedFileEntry } from '@/types';
+import { DOWNLOADED_FILES_STORAGE_KEY, FILE_TYPE_EXTENSIONS } from '@/lib/constants';
 import { format, parseISO } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -24,94 +24,59 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ToastAction } from '@/components/ui/toast';
-
 
 const ITEMS_PER_PAGE = 10;
 
-export default function DashboardPage() {
-  const [breachData, setBreachData] = useState<BreachData[]>([]);
+export default function DownloadedFilesPage() {
+  const [downloadedFiles, setDownloadedFiles] = useState<DownloadedFileEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterFileType, setFilterFileType] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
   const { toast } = useToast();
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setBreachData(MOCK_BREACH_DATA);
-      setIsLoading(false);
-    }, 1000);
-  }, []);
-
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    // Simulate API call to fetch new data
-    setTimeout(() => {
-      const newEntries: BreachData[] = Array.from({ length: 3 }, generateNewMockEntry);
-      setBreachData(prevData => [...newEntries, ...prevData]);
-      setIsRefreshing(false);
-      toast({ title: "Data Refreshed", description: `${newEntries.length} new potential breaches found.` });
-    }, 1500);
-  };
-
-  const handleDownload = (item: BreachData) => {
-    toast({
-      title: "Processing Download (Simulated)",
-      description: `Adding ${item.fileUrl.split('/').pop() || 'file'} to downloaded list.`,
-    });
-
-    // Simulate processing and adding to a "downloaded" list in localStorage
     try {
-      const existingDownloadsRaw = localStorage.getItem(DOWNLOADED_FILES_STORAGE_KEY);
-      const existingDownloads: DownloadedFileEntry[] = existingDownloadsRaw ? JSON.parse(existingDownloadsRaw) : [];
-      
-      // Check if already downloaded
-      if (existingDownloads.some(download => download.id === item.id)) {
-        toast({
-          title: "Already Processed",
-          description: `${item.fileUrl.split('/').pop() || 'File'} is already in your downloaded list.`,
-          variant: "default",
-        });
-        return;
+      const storedFilesRaw = localStorage.getItem(DOWNLOADED_FILES_STORAGE_KEY);
+      if (storedFilesRaw) {
+        const parsedFiles: DownloadedFileEntry[] = JSON.parse(storedFilesRaw);
+        // Sort by downloadedAt descending
+        parsedFiles.sort((a, b) => parseISO(b.downloadedAt).getTime() - parseISO(a.downloadedAt).getTime());
+        setDownloadedFiles(parsedFiles);
       }
-
-      const newDownloadEntry: DownloadedFileEntry = {
-        ...item,
-        downloadedAt: new Date().toISOString(),
-      };
-      
-      const updatedDownloads = [newDownloadEntry, ...existingDownloads];
-      localStorage.setItem(DOWNLOADED_FILES_STORAGE_KEY, JSON.stringify(updatedDownloads));
-
-      toast({
-        title: "File Processed for Download",
-        description: `${item.fileUrl.split('/').pop() || 'File'} added to Downloaded Files page.`,
-        action: <ToastAction altText="View Downloads" onClick={() => window.location.href = '/downloaded-files'}>View Downloads</ToastAction>,
-      });
-
     } catch (error) {
-      console.error("Failed to process download:", error);
+      console.error("Error loading downloaded files from localStorage:", error);
       toast({
-        title: "Error Processing Download",
-        description: "Could not add file to the downloaded list. See console for details.",
+        title: "Error Loading Files",
+        description: "Could not retrieve downloaded files. See console for details.",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, [toast]);
 
   const handleDelete = (id: string) => {
-    setBreachData(prevData => prevData.filter(item => item.id !== id));
-    toast({ title: "Item Removed from Dashboard", description: `Item with ID ${id} has been removed from this view.`, variant: "default" });
+    const updatedFiles = downloadedFiles.filter(item => item.id !== id);
+    setDownloadedFiles(updatedFiles);
+    localStorage.setItem(DOWNLOADED_FILES_STORAGE_KEY, JSON.stringify(updatedFiles));
+    toast({ title: "File Record Deleted", description: `Record for file ID ${id} has been removed from this list.` });
+  };
+  
+  const handleSimulatedDownload = (fileUrl: string) => {
+     toast({
+        title: "Download Simulation",
+        description: `This would typically initiate a download for: ${fileUrl}. In this demo, no actual download occurs.`,
+      });
+      // In a real app, this might open a new tab or trigger a browser download
+      window.open(fileUrl, '_blank');
   };
 
   const filteredData = useMemo(() => {
-    return breachData
+    return downloadedFiles
       .filter(item => {
         const searchTermLower = searchTerm.toLowerCase();
         return (
@@ -120,9 +85,8 @@ export default function DashboardPage() {
           item.keywords.some(kw => kw.toLowerCase().includes(searchTermLower))
         );
       })
-      .filter(item => filterFileType === 'all' || item.fileType === filterFileType)
-      .filter(item => filterStatus === 'all' || item.status === filterStatus);
-  }, [breachData, searchTerm, filterFileType, filterStatus]);
+      .filter(item => filterFileType === 'all' || item.fileType === filterFileType);
+  }, [downloadedFiles, searchTerm, filterFileType]);
 
   const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
   const paginatedData = filteredData.slice(
@@ -131,21 +95,17 @@ export default function DashboardPage() {
   );
 
   const uniqueFileTypes = useMemo(() => {
-    const types = new Set(MOCK_BREACH_DATA.map(item => item.fileType)); // Base on initial mock to keep consistent
+    const types = new Set(downloadedFiles.map(item => item.fileType));
     return ['all', ...Array.from(types)];
-  }, []);
+  }, [downloadedFiles]);
 
-  const uniqueStatuses = useMemo(() => {
-    const statuses = new Set(MOCK_BREACH_DATA.map(item => item.status).filter(Boolean) as string[]);  // Base on initial mock
-    return ['all', ...Array.from(statuses)];
-  }, []);
 
-  if (isLoading && breachData.length === 0) {
+  if (isLoading) {
     return (
       <AppShell>
         <div className="flex items-center justify-center h-full">
-          <RefreshCcw className="h-12 w-12 animate-spin text-accent" />
-          <p className="ml-4 text-xl">Loading breach data...</p>
+          <HardDriveDownload className="h-12 w-12 animate-pulse text-accent" />
+          <p className="ml-4 text-xl">Loading downloaded files...</p>
         </div>
       </AppShell>
     );
@@ -155,25 +115,17 @@ export default function DashboardPage() {
     <AppShell>
       <Card className="shadow-xl">
         <CardHeader>
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
-              <CardTitle className="text-2xl flex items-center">
-                <AlertTriangle className="h-7 w-7 mr-2 text-accent" />
-                Real-time Breach Dashboard
-              </CardTitle>
-              <CardDescription>
-                Identified potential data breaches. Review and process for download.
-              </CardDescription>
-            </div>
-            <Button onClick={handleRefresh} disabled={isRefreshing} variant="outline">
-              <RefreshCcw className={`mr-2 h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
-            </Button>
-          </div>
+          <CardTitle className="text-2xl flex items-center">
+            <HardDriveDownload className="h-7 w-7 mr-2 text-accent" />
+            Processed & Downloaded Files
+          </CardTitle>
+          <CardDescription>
+            List of files that have been processed for download from the dashboard. (Simulated downloads)
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-            <div className="relative">
+          <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
+            <div className="relative col-span-1 sm:col-span-2 lg:col-span-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
               <Input
                 type="search"
@@ -199,31 +151,21 @@ export default function DashboardPage() {
                 ))}
               </SelectContent>
             </Select>
-
-            <Select value={filterStatus} onValueChange={(value) => { setFilterStatus(value); setCurrentPage(1); }}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Filter by Status" />
-              </SelectTrigger>
-              <SelectContent>
-                {uniqueStatuses.map(status => (
-                  <SelectItem key={status} value={status}>
-                    {status === 'all' ? 'All Statuses' : status.charAt(0).toUpperCase() + status.slice(1)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             
-            <Button variant="outline" className="w-full sm:w-auto justify-start sm:justify-center">
+            {/* Placeholder for potential future advanced filters */}
+            {/* <Button variant="outline" className="w-full sm:w-auto justify-start sm:justify-center">
               <Filter className="mr-2 h-4 w-4" />
               Advanced Filters
-            </Button>
+            </Button> */}
           </div>
 
           {paginatedData.length === 0 ? (
             <div className="text-center py-10">
               <FileQuestion className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-xl font-semibold">No breaches found.</p>
-              <p className="text-muted-foreground">Try adjusting your search or filter criteria, or check your settings. New data might be discovered upon refresh.</p>
+              <p className="text-xl font-semibold">No Downloaded Files Found.</p>
+              <p className="text-muted-foreground">
+                {downloadedFiles.length > 0 ? "Try adjusting your search or filter criteria." : "Files processed for download from the dashboard will appear here."}
+              </p>
             </div>
           ) : (
           <div className="overflow-x-auto">
@@ -231,13 +173,12 @@ export default function DashboardPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px]"></TableHead>
-                  <TableHead>Source URL</TableHead>
                   <TableHead>File URL</TableHead>
                   <TableHead>File Type</TableHead>
-                  <TableHead>Date Found</TableHead>
+                  <TableHead>Original Source</TableHead>
+                  <TableHead>Downloaded At</TableHead>
                   <TableHead>Keywords</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right w-[150px]">Actions</TableHead>
+                  <TableHead className="text-right w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -246,26 +187,12 @@ export default function DashboardPage() {
                     <TableCell>
                       <FileTypeIcon fileTypeOrExt={item.fileType} />
                     </TableCell>
-                    <TableCell className="max-w-xs truncate">
-                       <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline text-accent hover:text-accent/80">
-                              {item.sourceUrl}
-                            </a>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            <p>{item.sourceUrl}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate">
+                     <TableCell className="max-w-xs truncate">
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
                              <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="hover:underline text-accent hover:text-accent/80">
-                              {item.fileUrl}
+                              {item.fileUrl.split('/').pop() || item.fileUrl}
                             </a>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
@@ -277,35 +204,44 @@ export default function DashboardPage() {
                     <TableCell>
                       <Badge variant="secondary">{item.fileType.toUpperCase()}</Badge>
                     </TableCell>
-                    <TableCell>{format(parseISO(item.dateFound), 'MMM dd, yyyy HH:mm')}</TableCell>
+                     <TableCell className="max-w-xs truncate">
+                       <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline text-muted-foreground hover:text-accent/80">
+                              {item.sourceUrl}
+                            </a>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            <p>Original Source: {item.sourceUrl}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </TableCell>
+                    <TableCell>{format(parseISO(item.downloadedAt), 'MMM dd, yyyy HH:mm')}</TableCell>
                     <TableCell className="max-w-sm">
                       <div className="flex flex-wrap gap-1">
                         {item.keywords.slice(0,3).map(kw => <Badge key={kw} variant="outline">{kw}</Badge>)}
                         {item.keywords.length > 3 && <Badge variant="outline">+{item.keywords.length - 3} more</Badge>}
                       </div>
                     </TableCell>
-                    <TableCell>
-                      {item.status && <Badge variant={item.status === 'new' ? 'default' : item.status === 'reviewed' ? 'outline' : 'destructive'}>
-                        {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                      </Badge>}
-                    </TableCell>
                     <TableCell className="text-right">
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" onClick={() => alert(`Viewing details for ${item.fileUrl}`)}>
-                              <Eye className="h-4 w-4" />
+                            <Button variant="ghost" size="icon" onClick={() => handleSimulatedDownload(item.fileUrl)}>
+                              <FileDown className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent><p>View Details</p></TooltipContent>
+                          <TooltipContent><p>Download Again (Simulated)</p></TooltipContent>
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" onClick={() => handleDownload(item)}>
-                              <HardDriveDownload className="h-4 w-4" />
+                             <Button variant="ghost" size="icon" onClick={() => window.open(item.fileUrl, '_blank')}>
+                              <ExternalLink className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent><p>Process for Download</p></TooltipContent>
+                          <TooltipContent><p>Open File URL in New Tab</p></TooltipContent>
                         </Tooltip>
                          <AlertDialog>
                           <Tooltip>
@@ -316,19 +252,20 @@ export default function DashboardPage() {
                                 </Button>
                               </AlertDialogTrigger>
                             </TooltipTrigger>
-                            <TooltipContent><p>Remove from Dashboard</p></TooltipContent>
+                            <TooltipContent><p>Delete Record</p></TooltipContent>
                           </Tooltip>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This will remove the item from this dashboard view. It will not delete it from the "Downloaded Files" list if already processed.
+                                This action will remove the record of this downloaded file from this list.
+                                It does not delete the actual file from its source. This cannot be undone.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                               <AlertDialogAction onClick={() => handleDelete(item.id)} className="bg-destructive hover:bg-destructive/90">
-                                Remove
+                                Delete Record
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -368,6 +305,3 @@ export default function DashboardPage() {
     </AppShell>
   );
 }
-
-
-    

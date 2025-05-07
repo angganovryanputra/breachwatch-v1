@@ -1,9 +1,10 @@
+
 'use client';
 
 import { AppShell } from '@/components/layout/app-shell';
 import { EthicalDisclosure } from '@/components/common/ethical-disclosure';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Info, FileText, ShieldCheck, Users, Globe } from 'lucide-react';
+import { Info, FileText, ShieldCheck, Users, Globe, Lightbulb, DatabaseZap, ArrowRightCircle, SearchCode, Workflow } from 'lucide-react';
 
 export default function GuidelinesPage() {
   return (
@@ -73,6 +74,68 @@ export default function GuidelinesPage() {
         
         <EthicalDisclosure />
 
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="text-2xl flex items-center">
+              <Lightbulb className="h-7 w-7 mr-2 text-accent" />
+              Rekomendasi Pengembangan (Further Development)
+            </CardTitle>
+            <CardDescription>
+              Ideas for enhancing BreachWatch capabilities and user experience.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid md:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center text-xl"><DatabaseZap className="mr-2 h-5 w-5 text-primary" />Backend Integration & Real Crawling</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <p><strong>Python Backend:</strong> Develop the conceptualized Python backend for actual web crawling, dork execution, and file analysis. This is the most critical next step for real functionality.</p>
+                  <p><strong>Task Queue:</strong> Implement a task queue (e.g., Celery with Redis/RabbitMQ) to manage crawling jobs asynchronously, allowing the UI to remain responsive.</p>
+                  <p><strong>Database Storage:</strong> Use a robust database (e.g., PostgreSQL, MongoDB) to store findings, crawl metadata, and user settings instead of relying solely on browser localStorage.</p>
+                   <p><strong>Persistent "Downloaded Files":</strong> Store downloaded file metadata in the backend database. The "Downloaded Files" page should then fetch from this database. Actual file storage could be local (server-side) or cloud-based (e.g., S3-compatible).</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center text-xl"><ArrowRightCircle className="mr-2 h-5 w-5 text-primary" />Automation & Workflow</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <p><strong>Scheduled Crawls:</strong> Allow users to schedule recurring crawls based on their settings.</p>
+                  <p><strong>Automated File Processing:</strong> Once a file is identified, automatically queue it for download (to a secure server location) and basic metadata extraction (e.g., file size, content snippet for PII check).</p>
+                  <p><strong>Notification System:</strong> Implement email or in-app notifications for new critical findings or completed crawls.</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center text-xl"><SearchCode className="mr-2 h-5 w-5 text-primary" />Advanced Analysis & Features</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <p><strong>Content Analysis (NLP/AI):</strong> Integrate Natural Language Processing (NLP) or GenAI models to analyze file contents for sensitive information (PII, keywords, context) beyond simple string matching. This can help score severity.</p>
+                  <p><strong>Duplicate Detection:</strong> Implement mechanisms to identify and flag duplicate files or data entries.</p>
+                  <p><strong>IOC Extraction:</strong> Automatically extract Indicators of Compromise (IOCs) like IP addresses, domains, hashes from identified files.</p>
+                  <p><strong>Reporting:</strong> Allow users to generate reports (CSV, PDF) of their findings.</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center text-xl"><Workflow className="mr-2 h-5 w-5 text-primary" />User Experience & Security</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <p><strong>User Authentication:</strong> Implement user accounts to save settings and results server-side.</p>
+                  <p><strong>Role-Based Access Control (RBAC):</strong> If multiple users are envisioned, implement RBAC for different levels of access.</p>
+                  <p><strong>Dark Web Monitoring Integration (Advanced):</strong> Explore possibilities of integrating with services that monitor dark web forums/marketplaces for mentions of targeted keywords or domains (requires careful ethical and legal consideration).</p>
+                  <p><strong>Proxy/VPN Integration:</strong> Allow configuration of proxies or VPNs for crawling to enhance anonymity and bypass some IP-based restrictions (again, with ethical use reminders).</p>
+                </CardContent>
+              </Card>
+            </div>
+            <p className="text-sm text-muted-foreground pt-4 border-t mt-6">
+              These recommendations aim to transform BreachWatch from a conceptual UI into a fully functional and robust data breach monitoring and research platform. Prioritization should be based on core functionality (backend crawling) first.
+            </p>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Project Structure & Conceptual Python Outline (For User)</CardTitle>
@@ -90,12 +153,19 @@ export default function GuidelinesPage() {
 │   │   ├── crawler.py        # Core crawling logic
 │   │   ├── file_identifier.py # File type and content analysis
 │   │   ├── keyword_matcher.py # Keyword matching logic
-│   │   └── downloader.py     # File download utilities
+│   │   └── downloader.py     # File download utilities (server-side)
 │   ├── strategies/
 │   │   ├── __init__.py
-│   │   ├── search_engine.py  # Search engine integration
+│   │   ├── search_engine_driver.py  # Search engine dork execution
 │   │   ├── direct_probe.py   # Direct URL probing
 │   │   └── recursive.py      # Recursive link following
+│   ├── api/                  # FastAPI or Flask API endpoints
+│   │   ├── __init__.py
+│   │   ├── routes.py         # API routes for dashboard interaction
+│   │   └── schemas.py        # Pydantic schemas for API
+│   ├── tasks/                # Celery tasks for async operations
+│   │   ├── __init__.py
+│   │   └── crawl_tasks.py
 │   ├── utils/
 │   │   ├── __init__.py
 │   │   ├── config_loader.py
@@ -103,14 +173,14 @@ export default function GuidelinesPage() {
 │   │   └── network.py        # HTTP request helpers, politeness
 │   ├── storage/
 │   │   ├── __init__.py
-│   │   ├── metadata_handler.py # CSV, JSON, SQLite operations
-│   │   └── file_saver.py       # Saving downloaded files
-│   └── main.py               # Main script execution logic
+│   │   ├── database.py       # Database models and session management (e.g., SQLAlchemy)
+│   │   └── file_handler.py   # Saving downloaded files to server/cloud
+│   └── main.py               # Main script execution logic / API runner
 ├── config/
 │   └── default_config.yml    # Configuration file
-├── data/
-│   ├── downloaded_files/     # Where downloaded files are stored
-│   └── metadata/             # Where metadata is stored (e.g., results.csv)
+├── data/                     # For persistent data (if not using cloud storage)
+│   ├── downloaded_files/     # Where downloaded files are stored (server-side)
+│   └── metadata_db/          # SQLite DB file or similar if not using full RDBMS
 ├── tests/                    # Unit and integration tests
 ├── venv/                     # Virtual environment
 ├── requirements.txt          # Python dependencies
@@ -163,13 +233,13 @@ def extract_links(html_content, base_url):
              <div>
               <h3 className="font-semibold text-base mb-2">Challenges & Limitations:</h3>
               <ul className="list-disc pl-5 space-y-1">
-                <li><strong>"Crawling the entire internet"</strong> is practically impossible due to its vastness, dynamic nature, and resource requirements. Focus is on targeted crawling.</li>
-                <li><strong>Anti-bot measures:</strong> Websites employ techniques (CAPTCHAs, IP blocking, rate limiting) to prevent automated crawling.</li>
-                <li><strong>JavaScript-rendered content:</strong> Standard HTTP requests may not capture links embedded by JavaScript. Selenium or similar browser automation tools might be needed, increasing complexity.</li>
-                <li><strong>Ethical and Legal Boundaries:</strong> Constantly navigating what is permissible and ethical is crucial and challenging.</li>
-                <li><strong>False Positives/Negatives:</strong> Keyword and extension matching can lead to incorrect identifications.</li>
-                <li><strong>Resource Intensive:</strong> Large-scale crawling and downloading consume significant bandwidth, CPU, and storage.</li>
-                <li><strong>Dynamic Content & Paywalls:</strong> Accessing content behind logins or paywalls is generally out of scope for public data research without authorization.</li>
+                <li><strong>"Crawling the entire internet"</strong> is practically impossible due to its vastness, dynamic nature, and resource requirements. Focus is on targeted crawling via dorks and seed URLs.</li>
+                <li><strong>Anti-bot measures:</strong> Websites employ techniques (CAPTCHAs, IP blocking, rate limiting) to prevent automated crawling. Requires robust error handling, user-agent rotation, and potentially proxy usage.</li>
+                <li><strong>JavaScript-rendered content:</strong> Standard HTTP requests may not capture links embedded by JavaScript. Selenium or Playwright might be needed for specific targets, increasing complexity and resource use.</li>
+                <li><strong>Ethical and Legal Boundaries:</strong> Constantly navigating what is permissible and ethical is crucial and challenging. Responsible disclosure protocols are paramount.</li>
+                <li><strong>False Positives/Negatives:</strong> Keyword and extension matching can lead to incorrect identifications. Content analysis can help but is not foolproof.</li>
+                <li><strong>Resource Intensive:</strong> Large-scale crawling and downloading consume significant bandwidth, CPU, and storage. Efficient coding and resource management are key.</li>
+                <li><strong>Dynamic Content & Paywalls:</strong> Accessing content behind logins or paywalls is generally out of scope for public data research without authorization and adds significant complexity.</li>
               </ul>
             </div>
           </CardContent>
@@ -178,3 +248,4 @@ def extract_links(html_content, base_url):
     </AppShell>
   );
 }
+

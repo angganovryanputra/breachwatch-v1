@@ -1,14 +1,20 @@
 
 import type { BreachData, NavItem, SettingsData } from '@/types';
-import { LayoutDashboard, Settings, ShieldAlert, Info } from 'lucide-react';
+import { LayoutDashboard, Settings, ShieldAlert, Info, HardDriveDownload } from 'lucide-react';
 
 export const APP_NAME = 'BreachWatch';
+export const DOWNLOADED_FILES_STORAGE_KEY = 'breachWatchDownloadedFiles';
 
 export const NAV_LINKS: NavItem[] = [
   {
     title: 'Dashboard',
     href: '/dashboard',
     icon: LayoutDashboard,
+  },
+  {
+    title: 'Downloaded Files',
+    href: '/downloaded-files',
+    icon: HardDriveDownload,
   },
   {
     title: 'Settings',
@@ -24,52 +30,52 @@ export const NAV_LINKS: NavItem[] = [
 
 export const MOCK_BREACH_DATA: BreachData[] = [
   { 
-    id: '1', 
+    id: 'mock-1', 
     sourceUrl: 'https://example.com/forum/thread1', 
     fileUrl: 'https://cdn.example.com/data_dump.txt', 
     fileType: 'txt', 
-    dateFound: new Date().toISOString(), 
+    dateFound: new Date(Date.now() - 86400000 * 1).toISOString(), 
     keywords: ['passwords', 'users', 'credentials'],
     status: 'new',
   },
   { 
-    id: '2', 
+    id: 'mock-2', 
     sourceUrl: 'https://another-site.org/leaks', 
     fileUrl: 'https://another-site.org/leaks/customer_db.sql.gz', 
     fileType: 'sql.gz', 
-    dateFound: new Date(Date.now() - 86400000 * 2).toISOString(), // 2 days ago
+    dateFound: new Date(Date.now() - 86400000 * 2).toISOString(), 
     keywords: ['database', 'customer_info', 'backup'],
     status: 'reviewed',
   },
   { 
-    id: '3', 
+    id: 'mock-3', 
     sourceUrl: 'http://public-files.net/archive', 
     fileUrl: 'http://public-files.net/archive/full_backup_2023.zip', 
     fileType: 'zip', 
-    dateFound: new Date(Date.now() - 86400000 * 5).toISOString(), // 5 days ago
+    dateFound: new Date(Date.now() - 86400000 * 5).toISOString(), 
     keywords: ['backup', 'archive', 'confidential_data'],
     status: 'new',
   },
   { 
-    id: '4', 
+    id: 'mock-4', 
     sourceUrl: 'https://pastebin.com/xyz123', 
     fileUrl: 'https://pastebin.com/raw/xyz123', 
     fileType: 'json', 
-    dateFound: new Date(Date.now() - 86400000 * 1).toISOString(), // 1 day ago
+    dateFound: new Date(Date.now() - 86400000 * 1).toISOString(), 
     keywords: ['api_keys', 'tokens', 'credentials.json'],
     status: 'ignored',
   },
   { 
-    id: '5', 
+    id: 'mock-5', 
     sourceUrl: 'https://internal-docs.com/data', 
     fileUrl: 'https://internal-docs.com/data/employee_records.xlsx', 
     fileType: 'xlsx', 
-    dateFound: new Date(Date.now() - 86400000 * 10).toISOString(), // 10 days ago
+    dateFound: new Date(Date.now() - 86400000 * 10).toISOString(), 
     keywords: ['employee_data', 'salary_info', 'PII'],
     status: 'new',
   },
    { 
-    id: '6', 
+    id: 'mock-6', 
     sourceUrl: 'https://s3.public-bucket.aws/data', 
     fileUrl: 'https://s3.public-bucket.aws/data/user_details.csv', 
     fileType: 'csv', 
@@ -78,7 +84,7 @@ export const MOCK_BREACH_DATA: BreachData[] = [
     status: 'reviewed',
   },
   { 
-    id: '7', 
+    id: 'mock-7', 
     sourceUrl: 'ftp://ftp.company.com/backups', 
     fileUrl: 'ftp://ftp.company.com/backups/website_backup.tar.gz', 
     fileType: 'tar.gz', 
@@ -87,7 +93,7 @@ export const MOCK_BREACH_DATA: BreachData[] = [
     status: 'new',
   },
   {
-    id: '8',
+    id: 'mock-8',
     sourceUrl: 'https://research-data.edu/public',
     fileUrl: 'https://research-data.edu/public/study_participants.db',
     fileType: 'db',
@@ -96,7 +102,7 @@ export const MOCK_BREACH_DATA: BreachData[] = [
     status: 'new',
   },
   {
-    id: '9',
+    id: 'mock-9',
     sourceUrl: 'https://dev-server.com/tmp/',
     fileUrl: 'https://dev-server.com/tmp/old_config.bak',
     fileType: 'bak',
@@ -105,7 +111,7 @@ export const MOCK_BREACH_DATA: BreachData[] = [
     status: 'ignored',
   },
   {
-    id: '10',
+    id: 'mock-10',
     sourceUrl: 'https://data-terbuka.go.id/expose/datawarga.csv',
     fileUrl: 'https://data-terbuka.go.id/expose/datawarga.csv',
     fileType: 'csv',
@@ -114,7 +120,7 @@ export const MOCK_BREACH_DATA: BreachData[] = [
     status: 'new',
   },
   {
-    id: '11',
+    id: 'mock-11',
     sourceUrl: 'https://kebocoran-data.web.id/files/kk_database.sql',
     fileUrl: 'https://kebocoran-data.web.id/files/kk_database.sql',
     fileType: 'sql',
@@ -123,7 +129,7 @@ export const MOCK_BREACH_DATA: BreachData[] = [
     status: 'reviewed',
   },
   {
-    id: '12',
+    id: 'mock-12',
     sourceUrl: 'https://paste.leakedsource.info/view/randomidpaste',
     fileUrl: 'https://paste.leakedsource.info/raw/randomidpaste',
     fileType: 'txt',
@@ -132,6 +138,25 @@ export const MOCK_BREACH_DATA: BreachData[] = [
     status: 'new',
   }
 ];
+
+// Helper to generate unique IDs for mock data for refresh simulation
+export const generateNewMockEntry = (): BreachData => {
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 9);
+  const fileTypes = ['txt', 'csv', 'sql', 'zip', 'json', 'db', 'log', 'bak', 'tar.gz', '7z', 'conf'];
+  const statuses = ['new', 'reviewed', 'ignored'] as BreachData['status'][];
+  
+  return {
+    id: `breach-${timestamp}-${randomSuffix}`,
+    sourceUrl: `https://discovered-site.com/path/${randomSuffix}`,
+    fileUrl: `https://storage.discovered-site.com/files/breach_data_${timestamp}.${fileTypes[Math.floor(Math.random() * fileTypes.length)]}`,
+    fileType: fileTypes[Math.floor(Math.random() * fileTypes.length)],
+    dateFound: new Date().toISOString(),
+    keywords: ['sensitive_info', `passwords_${randomSuffix}`, 'confidential', ['NIK', 'no_ktp', 'internal_docs'][Math.floor(Math.random()*3)] ],
+    status: statuses[Math.floor(Math.random() * statuses.length)],
+  };
+};
+
 
 export const DEFAULT_SETTINGS: SettingsData = {
   keywords: "password, secret, api_key, token, credential, private_key, backup, dump, leak, user, admin, config, NIK, no_ktp, nama_lengkap, nomor_induk_kependudukan, kartu_keluarga, nomor_kk, tempat_lahir, tanggal_lahir, alamat, bpjs, npwp, no_hp, email, rahasia, data_pribadi, identitas, pengguna, sandi, database, internal, konfidensial, data_nasabah, data_karyawan, data_mahasiswa, data_pasien",
@@ -180,7 +205,7 @@ export const DEFAULT_SETTINGS: SettingsData = {
             "https://search.censys.io/search?resource=hosts&q=services.http.response.html_title%3A%22Index%20of%22%20AND%20autonomous_system.country_code%3A%20ID%20AND%20services.http.response.body%3A%22backup%22\n" +
             "https://www.shodan.io/search?query=country%3A%22ID%22+http.title%3A%22Index+of%22+%22.sql%22\n" +
             "https://www.zoomeye.org/searchResult?q=country%3A%22Indonesia%22%20%2Btitle%3A%22Index%20of%22%20%2B%22.zip%22\n" +
-            "https://fofa.info/result?qbase64=Y291bnRyeT0iSUQiICYmIHRpdGxlPSJJbmRleCBvZiIgJiYgYm9keT0iLmNzdignJw%3D%3D\n" + // country="ID" && title="Index of" && body=".csv'"
+            "https://fofa.info/result?qbase64=Y291bnRyeT0iSUQiICYmIHRpdGxlPSJJbmRleCBvZiIgJiYgYm9keT0iLmNzdignJw%3D%3D\n" +
             "https://repository.ui.ac.id/\n" +
             "https://repository.itb.ac.id/\n" +
             "https://repository.ugm.ac.id/\n" +
@@ -190,16 +215,16 @@ export const DEFAULT_SETTINGS: SettingsData = {
             "https://repository.its.ac.id/\n" +
             "https://dspace.uii.ac.id/\n" +
             "https://mediafire.com/\n" +
-            "https://zippyshare.com/\n" + // Often used for leaks
+            "https://zippyshare.com/\n" + 
             "https://mega.nz/\n" +
             "https://gofile.io/\n" +
             "https://anonfiles.com/\n" +
             "https://sendspace.com/\n" +
-            "https://mirrored.to/\n" + // Aggregator for file hosting
+            "https://mirrored.to/\n" + 
             "https://filetransfer.io/\n" +
             "https://transfer.sh/\n" +
-            "https://wetransfer.com/\n" + // Less likely but possible
-            "https://linktr.ee/search/indonesia%20data%20leak\n" + // Link aggregators
+            "https://wetransfer.com/\n" + 
+            "https://linktr.ee/search/indonesia%20data%20leak\n" + 
             "https://beacons.ai/search/indonesia%20data%20breach",
   searchDorks: 'intitle:"index of" "backup"\n' +
                'filetype:sql "passwords"\n' +
