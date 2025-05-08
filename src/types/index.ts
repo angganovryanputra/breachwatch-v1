@@ -25,6 +25,15 @@ export interface User {
   avatarUrl?: string | null; // Optional: for displaying user avatar
 }
 
+export interface UserPreferences {
+  user_id: string;
+  default_items_per_page: number;
+  receive_email_notifications: boolean;
+  // Add other preferences here
+  updated_at?: string; // datetime (ISO string)
+}
+
+
 export interface ScheduleData {
   type: 'one-time' | 'recurring';
   cronExpression?: string | null; // For recurring jobs, e.g., "0 0 * * *" for daily at midnight
@@ -72,6 +81,7 @@ export interface NavItem {
   label?: string;
   disabled?: boolean;
   adminOnly?: boolean; // For conditional rendering based on user role
+  category?: 'main' | 'account'; // For grouping in sidebar
 }
 
 // This is the frontend form data structure for settings

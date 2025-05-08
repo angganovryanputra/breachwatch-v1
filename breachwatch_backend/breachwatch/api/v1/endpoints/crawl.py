@@ -36,33 +36,68 @@ async def process_crawl_job(job_id: uuid.UUID, settings_data: dict, db_session_m
         active_crawlers[job_id] = crawler 
         
         files_processed_count = 0
+        initial_urls_found_by_crawler = False # Track if crawler found URLs from seeds/dorks
         async for downloaded_file_schema in crawler.start_crawling():
             if downloaded_file_schema:
                 files_processed_count +=1
                 logger.info(f"Job {job_id} processed and stored: {downloaded_file_schema.file_url} (ID: {downloaded_file_schema.id})")
-            else:
-                logger.debug(f"Job {job_id} yielded a None value from crawler (possibly end or empty iteration).")
+            # Check if the crawler found initial URLs after start_crawling begins
+            if crawler.initial_urls_found: 
+                initial_urls_found_by_crawler = True
         
+        # Re-fetch job status after crawl attempt completes
         job_final_status_obj = crud.get_crawl_job(db, job_id)
-        final_status = "completed"
-        if job_final_status_obj and job_final_status_obj.status not in ["failed", "stopping"]:
-            if files_processed_count == 0 and not crawler.initial_urls_found: # Check if crawler found any initial URLs
-                 final_status = "completed_empty"
-        elif job_final_status_obj: # Status was 'failed' or 'stopping'
-            final_status = job_final_status_obj.status
+        final_status = "completed" # Default assumption
 
-        # If the job was recurring, calculate and set the next run time
+        # Only update if status wasn't externally set to failed/stopping during the run
+        if job_final_status_obj and job_final_status_obj.status == "running": 
+            if files_processed_count == 0 and not initial_urls_found_by_crawler: # Check if crawler found any initial URLs and processed files
+                 final_status = "completed_empty"
+            # Set to completed if files were processed or initial URLs were found but no files matched
+            elif files_processed_count > 0 or initial_urls_found_by_crawler:
+                 final_status = "completed"
+            else: # Should not happen if status was running, but as fallback
+                 final_status = "failed" # Consider it failed if it was running but found nothing AND processed nothing.
+
+        elif job_final_status_obj: # Status was already changed (e.g., 'failed' or 'stopping')
+            final_status = job_final_status_obj.status
+        
+        # If the job was recurring and completed successfully, schedule the next run
         next_run = None
         if job_final_status_obj and job_final_status_obj.settings_schedule_type == "recurring" and job_final_status_obj.settings_schedule_cron_expression:
-            # next_run = calculate_next_run_time(job_final_status_obj.settings_schedule_cron_expression, job_final_status_obj.settings_schedule_timezone)
-            # final_status = "scheduled" # Reschedule it
-            logger.info(f"Job {job_id} was recurring. Placeholder for rescheduling logic. Next run calculation needed.")
-            # For now, if recurring and completed successfully, mark as 'scheduled' for scheduler to pick up
             if final_status in ["completed", "completed_empty"]:
-                final_status = "scheduled" 
-                # Actual next_run time would be set by a dedicated scheduler service or cron job manager.
-                # For now, we'll leave it to be updated by such a service.
-                # crud.update_crawl_job_status(db=db, job_id=job_id, status="scheduled", next_run_at=next_run_placeholder)
+                # This needs robust implementation using croniter or similar
+                try:
+                    from croniter import croniter # type: ignore
+                    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError # type: ignore
+                    
+                    tz_str = job_final_status_obj.settings_schedule_timezone or 'UTC'
+                    try:
+                        tz = ZoneInfo(tz_str)
+                    except ZoneInfoNotFoundError:
+                        logger.warning(f"Invalid timezone '{tz_str}' for job {job_id}. Defaulting to UTC.")
+                        tz = ZoneInfo('UTC')
+                        
+                    # Use last_run_at if available, otherwise use updated_at as base
+                    base_time = job_final_status_obj.last_run_at or job_final_status_obj.updated_at
+                    base_time = base_time.astimezone(tz) # Ensure correct timezone for calculation
+
+                    iter = croniter(job_final_status_obj.settings_schedule_cron_expression, base_time)
+                    next_run = iter.get_next(datetime)
+                    # Convert back to UTC for storage
+                    next_run = next_run.astimezone(timezone.utc) 
+                    final_status = "scheduled" # Reschedule it
+                    logger.info(f"Job {job_id} is recurring. Calculated next run: {next_run} UTC.")
+                except ImportError:
+                    logger.error("croniter library not installed. Cannot calculate next run time for recurring jobs. Please install with 'pip install croniter'.")
+                    final_status = "failed" # Fail if cannot schedule next run
+                except Exception as e:
+                     logger.error(f"Error calculating next run time for job {job_id} with cron '{job_final_status_obj.settings_schedule_cron_expression}': {e}", exc_info=True)
+                     final_status = "failed" # Fail if calculation fails
+            else:
+                # If recurring job failed or stopped, don't reschedule automatically
+                logger.info(f"Recurring job {job_id} finished with status {final_status}. Not rescheduling.")
+                # Keep final_status as failed/stopping etc.
 
         
         crud.update_crawl_job_status(db=db, job_id=job_id, status=final_status, next_run_at=next_run)
@@ -100,7 +135,15 @@ async def create_new_crawl_job(
         # If the job is not scheduled (i.e., status is 'pending' for immediate run), add to background tasks.
         # Scheduled jobs will be picked up by a separate scheduler mechanism (not implemented here).
         if db_crawl_job.status == "pending":
-            settings_dict = crawl_job_in.settings.model_dump()
+            settings_dict = crawl_job_in.settings.model_dump(mode='json') # Ensure proper serialization
+            # Convert HttpUrl fields back to strings if needed for background task serialization
+            # settings_dict['seed_urls'] = [str(url) for url in crawl_job_in.settings.seed_urls]
+            
+            # Ensure schedule is also properly serialized if present
+            if 'schedule' in settings_dict and settings_dict['schedule']:
+                 if 'run_at' in settings_dict['schedule'] and settings_dict['schedule']['run_at']:
+                      settings_dict['schedule']['run_at'] = settings_dict['schedule']['run_at'].isoformat()
+
             background_tasks.add_task(process_crawl_job, db_crawl_job.id, settings_dict, SessionLocal)
             logger.info(f"Immediate crawl job {db_crawl_job.id} added to background tasks.")
         elif db_crawl_job.status == "scheduled":
@@ -118,11 +161,18 @@ async def get_specific_crawl_job(job_id: uuid.UUID, db: Session = Depends(get_db
     db_crawl_job = crud.get_crawl_job(db=db, job_id=job_id)
     if db_crawl_job is None:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Crawl job not found")
-    return db_crawl_job
+    
+    # Manually construct the response schema to ensure downloaded_files summary is calculated
+    # This might be redundant if the Pydantic model with Config.from_attributes handles it correctly via the property
+    # job_data = schemas.CrawlJobSchema.from_orm(db_crawl_job) # Requires Config.orm_mode=True or from_attributes=True
+    # job_data.results_summary = {"files_found": len(db_crawl_job.downloaded_files)} # Explicitly set if needed
+
+    return db_crawl_job # Return the ORM model directly, Pydantic handles conversion
 
 @router.get("/jobs", response_model=List[schemas.CrawlJobSchema])
 async def list_all_crawl_jobs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)): 
     crawl_jobs = crud.get_crawl_jobs(db=db, skip=skip, limit=limit)
+    # Ensure summary is calculated for each job (Pydantic should handle this with relationship loading)
     return crawl_jobs
 
 
@@ -173,7 +223,7 @@ async def stop_crawl_job_endpoint(job_id: uuid.UUID, db: Session = Depends(get_d
         # If crawler isn't active (e.g., task finished, server restarted, or job is scheduled/pending but not yet in active_crawlers)
         # Update DB status to 'failed' (or a specific 'cancelled_scheduled' status if it was scheduled)
         # This ensures it won't be picked up by a scheduler or run if pending.
-        new_status = "failed" if job.status in ["running", "pending"] else "failed" # or a 'cancelled' status
+        new_status = "failed" # Consider a more specific status like 'stopped' or 'cancelled'
         crud.update_crawl_job_status(db=db, job_id=job_id, status=new_status)
         logger.info(f"Crawler for job {job_id} not in active memory. Status set to '{new_status}' in DB to prevent execution.")
         return schemas.MessageResponseSchema(message=f"Crawl job {job_id} status set to '{new_status}'. If it was scheduled or pending, it will not run.")
@@ -200,11 +250,20 @@ async def manually_run_job(
          raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=f"Job {job_id} is already in active crawlers list (likely about to run or running).")
 
     # Prepare settings from the stored job
+    schedule_data = None
+    if job.settings_schedule_type:
+        schedule_data = schemas.ScheduleSchema(
+            type=job.settings_schedule_type,
+            cron_expression=job.settings_schedule_cron_expression,
+            run_at=job.settings_schedule_run_at,
+            timezone=job.settings_schedule_timezone
+        )
+
     job_settings_schema = schemas.CrawlSettingsSchema(
-        keywords=job.settings_keywords,
-        file_extensions=job.settings_file_extensions,
-        seed_urls=job.settings_seed_urls, # These are already strings
-        search_dorks=job.settings_search_dorks,
+        keywords=job.settings_keywords or [], # Ensure lists are not None
+        file_extensions=job.settings_file_extensions or [],
+        seed_urls=job.settings_seed_urls or [], # Expecting list of strings from DB
+        search_dorks=job.settings_search_dorks or [],
         crawl_depth=job.settings_crawl_depth,
         respect_robots_txt=job.settings_respect_robots_txt,
         request_delay_seconds=job.settings_request_delay_seconds,
@@ -212,15 +271,16 @@ async def manually_run_job(
         max_results_per_dork=job.settings_max_results_per_dork,
         max_concurrent_requests_per_domain=job.settings_max_concurrent_requests_per_domain,
         custom_user_agent=job.settings_custom_user_agent,
-        schedule=None # Manual run ignores original schedule for this instance
+        schedule=None # Manual run ignores original schedule for this instance, but use None explicitly
     )
-    settings_dict = job_settings_schema.model_dump()
-    
-    # crud.update_crawl_job_status(db=db, job_id=job.id, status="pending") # Set to pending before adding to task
+    settings_dict = job_settings_schema.model_dump(mode='json') # Use mode='json' for proper serialization
+
+    # Schedule the job execution in the background
+    crud.update_crawl_job_status(db=db, job_id=job.id, status="pending") # Set to pending before adding to task
     background_tasks.add_task(process_crawl_job, job.id, settings_dict, SessionLocal)
     logger.info(f"Manual run for job {job.id} added to background tasks.")
     
-    # Fetch again to show updated status (process_crawl_job will set it to running)
+    # Fetch again to show updated status (it will be pending initially)
     updated_job = crud.get_crawl_job(db, job.id)
     return updated_job
 
@@ -272,10 +332,13 @@ async def delete_single_downloaded_file_record(
           if delete_physical_file(local_file_path_to_delete):
               logger.info(f"Successfully deleted physical file: {local_file_path_to_delete}")
           else:
+              # Log warning but don't raise error, DB record deletion was the primary goal
               logger.warning(f"Failed to delete physical file or file not found: {local_file_path_to_delete} (DB record was still deleted).")
         return Response(status_code=http_status.HTTP_204_NO_CONTENT)
     else:
-        logger.error(f"Deletion of file record {file_id} reported as unsuccessful by CRUD, but should have been found.")
+        # This case should technically not be reached if get_downloaded_file found it,
+        # but handle defensively.
+        logger.error(f"Deletion of file record {file_id} reported as unsuccessful by CRUD, but should have been found earlier.")
         raise HTTPException(status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error deleting file record from DB.")
 
 # Import asyncio for the sleep in delete_crawl_job_endpoint

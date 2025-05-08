@@ -79,13 +79,33 @@ class DownloadedFile(Base):
         return f"<DownloadedFile(id={self.id}, file_url='{self.file_url}', type='{self.file_type}')>"
 
 # TODO: Add User and Role models for authentication and RBAC later
-# class User(Base):
-#     __tablename__ = "users"
-#     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-#     email = Column(String, unique=True, index=True, nullable=False)
-#     hashed_password = Column(String, nullable=False)
-#     full_name = Column(String, nullable=True)
-#     is_active = Column(Boolean, default=True)
-#     role = Column(String, default="user") # e.g., "user", "admin"
-#     created_at = Column(DateTime(timezone=True), server_default=func.now())
-#     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+class User(Base):
+    __tablename__ = "users"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    full_name = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+    role = Column(String, default="user", index=True) # e.g., "user", "admin"
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+    preferences = relationship("UserPreference", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<User(id={self.id}, email='{self.email}', role='{self.role}')>"
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    default_items_per_page = Column(Integer, default=10, nullable=False)
+    receive_email_notifications = Column(Boolean, default=True, nullable=False)
+    # Add other preference fields here (e.g., theme, default filters)
+    
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+    user = relationship("User", back_populates="preferences")
+
+    def __repr__(self):
+        return f"<UserPreference(user_id={self.user_id}, items_per_page={self.default_items_per_page})>"

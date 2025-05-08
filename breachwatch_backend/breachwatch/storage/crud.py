@@ -7,6 +7,7 @@ from datetime import datetime
 
 from . import models
 from breachwatch.api.v1 import schemas # For Pydantic schemas
+# from breachwatch.core.security import get_password_hash # TODO: Implement security utils
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ def create_crawl_job(db: Session, crawl_job_in: schemas.CrawlJobCreateSchema) ->
         status=initial_status,
         settings_keywords=settings.keywords,
         settings_file_extensions=settings.file_extensions,
-        settings_seed_urls=[str(url) for url in settings.seed_urls],
+        settings_seed_urls=[str(url) for url in settings.seed_urls], # Store as string list
         settings_search_dorks=settings.search_dorks,
         settings_crawl_depth=settings.crawl_depth,
         settings_respect_robots_txt=settings.respect_robots_txt,
@@ -88,7 +89,7 @@ def update_crawl_job_status(db: Session, job_id: uuid.UUID, status: str, next_ru
     db_crawl_job = get_crawl_job(db, job_id) 
     if db_crawl_job:
         db_crawl_job.status = status
-        db_crawl_job.updated_at = datetime.utcnow() 
+        db_crawl_job.updated_at = datetime.now(uuid.uuid1().node) # Use UTC now 
         if next_run_at is not None: # Explicitly check for None to allow clearing
             db_crawl_job.next_run_at = next_run_at
         if last_run_at:
@@ -178,3 +179,86 @@ def get_due_scheduled_jobs(db: Session, now_utc: Optional[datetime] = None) -> L
 #         db.commit()
 #         db.refresh(job)
 #     return job
+
+# --- User CRUD ---
+
+def get_user(db: Session, user_id: uuid.UUID) -> Optional[models.User]:
+    return db.query(models.User).filter(models.User.id == user_id).first()
+
+def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
+    return db.query(models.User).filter(models.User.email == email).first()
+
+def get_users(db: Session, skip: int = 0, limit: int = 100) -> List[models.User]:
+    return db.query(models.User).offset(skip).limit(limit).all()
+
+def create_user(db: Session, user_in: schemas.UserCreateSchema) -> models.User:
+    # hashed_password = get_password_hash(user_in.password) # Use password hashing
+    # Placeholder for hashed password until security utils are implemented
+    hashed_password = user_in.password + "_hashed" # Replace with actual hashing!
+    db_user = models.User(
+        email=user_in.email,
+        hashed_password=hashed_password,
+        full_name=user_in.full_name,
+        is_active=user_in.is_active,
+        role=user_in.role
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    # Optionally create default preferences for the new user
+    create_default_user_preferences(db, db_user.id)
+    logger.info(f"User created: {db_user.email} (ID: {db_user.id})")
+    return db_user
+
+def update_user_role(db: Session, user_id: uuid.UUID, role: str) -> Optional[models.User]:
+    db_user = get_user(db, user_id)
+    if db_user:
+        db_user.role = role
+        db_user.updated_at = datetime.now(uuid.uuid1().node)
+        db.commit()
+        db.refresh(db_user)
+        logger.info(f"Updated role for user {user_id} to {role}")
+    return db_user
+
+# --- UserPreference CRUD ---
+
+def get_user_preferences(db: Session, user_id: uuid.UUID) -> Optional[models.UserPreference]:
+    return db.query(models.UserPreference).filter(models.UserPreference.user_id == user_id).first()
+
+def update_or_create_user_preferences(db: Session, user_id: uuid.UUID, preferences_in: schemas.UserPreferenceUpdateSchema) -> Optional[models.UserPreference]:
+    db_prefs = get_user_preferences(db, user_id)
+    if db_prefs:
+        # Update existing preferences
+        db_prefs.default_items_per_page = preferences_in.default_items_per_page
+        db_prefs.receive_email_notifications = preferences_in.receive_email_notifications
+        # Update other fields from preferences_in as needed
+        db_prefs.updated_at = datetime.now(uuid.uuid1().node)
+        logger.info(f"Updating preferences for user {user_id}")
+    else:
+        # Create new preferences
+        db_prefs = models.UserPreference(
+            user_id=user_id,
+            default_items_per_page=preferences_in.default_items_per_page,
+            receive_email_notifications=preferences_in.receive_email_notifications,
+            # Set other fields from preferences_in or defaults
+        )
+        db.add(db_prefs)
+        logger.info(f"Creating new preferences for user {user_id}")
+    
+    db.commit()
+    db.refresh(db_prefs)
+    return db_prefs
+
+def create_default_user_preferences(db: Session, user_id: uuid.UUID) -> models.UserPreference:
+    """Creates default preferences for a user, usually upon creation."""
+    default_prefs = schemas.UserPreferenceUpdateSchema() # Gets defaults from schema
+    db_prefs = models.UserPreference(
+        user_id=user_id,
+        default_items_per_page=default_prefs.default_items_per_page,
+        receive_email_notifications=default_prefs.receive_email_notifications
+    )
+    db.add(db_prefs)
+    db.commit()
+    db.refresh(db_prefs)
+    logger.info(f"Created default preferences for user {user_id}")
+    return db_prefs

@@ -1,148 +1,292 @@
 import type { NavItem, SettingsFormData } from '@/types';
-import { LayoutDashboard, FileText, Settings, ShieldQuestion, BookOpen, GanttChartSquare, Users } from 'lucide-react';
+import { LayoutDashboard, FileText, Settings, Info, Users, HardDriveDownload, GanttChartSquare, UserCog } from 'lucide-react';
+import { format } from 'date-fns';
+
 
 export const APP_NAME = 'BreachWatch';
 
 export const NAV_LINKS: NavItem[] = [
-  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { title: 'Crawl Jobs', href: '/jobs', icon: GanttChartSquare },
-  { title: 'File Records', href: '/downloaded-files', icon: FileText },
-  { title: 'Settings', href: '/settings', icon: Settings },
-  { title: 'User Management', href: '/admin/users', icon: Users, adminOnly: true },
-  { title: 'Documentation', href: '/documentation', icon: BookOpen },
-  { title: 'Ethical Guidelines', href: '/guidelines', icon: ShieldQuestion },
+  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, category: 'main' },
+  { title: 'Downloaded Files', href: '/downloaded-files', icon: HardDriveDownload, category: 'main' },
+  { title: 'Crawl Jobs', href: '/jobs', icon: GanttChartSquare, category: 'main' },
+  { title: 'Settings', href: '/settings', icon: Settings, category: 'main' },
+  { title: 'Ethical Guidelines', href: '/guidelines', icon: Info, category: 'main' },
+  { title: 'Documentation', href: '/documentation', icon: FileText, category: 'main'},
+  { title: 'User Management', href: '/admin/users', icon: Users, adminOnly: true, category: 'main' },
+  { title: 'User Preferences', href: '/profile/preferences', icon: UserCog, category: 'account' },
 ];
 
+
+export const DEFAULT_KEYWORDS = [
+  "password", "secret", "confidential", "private key", "api_key", "token", "credentials", "backup",
+  "NIK", "no_ktp", "nomor_ktp", "nama_lengkap", "ktp", "kartu_keluarga", "kk", "no_kk",
+  "ijazah", "transkrip_nilai", "cv", "lamaran_kerja", "gaji", "slip_gaji",
+  "rekening_koran", "mutasi_rekening", "kartu_kredit", "nomor_rekening", "bank_statement",
+  "database_dump", ".sql", ".bak", ".env", "config", "prod.config", "staging.config",
+  "internal", "rahasia_perusahaan", "dokumen_rahasia", "notulen_rapat", "SOP",
+  "data_pelanggan", "data_nasabah", "data_karyawan", "user_list", "member_data",
+  "site:pastebin.com", "site:justpaste.it", "site:throwbin.io", "site:scribd.com",
+  "inurl:admin", "inurl:login", "intitle:index.of", "intitle:dashboard",
+  "\"Powered by WHM/cPanel\"", "\"phpmyadmin\"",
+  "filetype:log", "filetype:env", "filetype:bak", "filetype:sql", "filetype:json", "filetype:csv", "filetype:txt", "filetype:xls", "filetype:xlsx", "filetype:doc", "filetype:docx", "filetype:pdf", "filetype:zip", "filetype:rar", "filetype:tar.gz", "filetype:tgz", "filetype:7z",
+  
+  // Indonesian specific
+  "bocoran_data", "kebocoran_data", "data_pribadi", "informasi_sensitif", "data_penduduk",
+  "nomor_induk_kependudukan", "nomor_identitas", "bpjs", "npwp", "surat_tanah", "sertifikat_rumah",
+  "intitle:\"direktori data\" site:.go.id", "intext:\"rahasia negara\" site:.mil.id",
+  "filetype:pdf site:.go.id \"surat keputusan\"", "filetype:xls site:.go.id \"daftar nama\"",
+  "site:.ac.id filetype:sql username password", "site:.co.id inurl:backup database",
+  "\"alamat email\" \"nomor telepon\" filetype:csv site:.id",
+  "\"rapat internal\" filetype:docx site:.go.id",
+  "\"daftar hadir\" \"NIK\" filetype:pdf site:.go.id",
+  // Common sensitive files
+  "wp-config.php", "settings.php", "local.xml", "credentials.json", "id_rsa", "id_dsa",
+  // Cloud storage related
+  "s3.amazonaws.com", "storage.googleapis.com", "blob.core.windows.net", "digitaloceanspaces.com"
+].join('\n');
+
+
+export const DEFAULT_FILE_EXTENSIONS = [
+  "txt", "csv", "sql", "json", "xml", "yaml", "yml", "ini", "conf", "config", "cfg",
+  "log", "env", "pem", "key", "cer", "crt", "p12", "pfx", "jks",
+  "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "pdf",
+  "zip", "rar", "tar", "gz", "7z", "bz2", "tgz",
+  "db", "sqlite", "mdb", "bak", "dump", "sqlitedb", "backup", "bkf", "bkp",
+  "php", "asp", "aspx", "jsp", "rb", "py", "sh", "bat", "ps1",
+  // Image files are generally less likely to contain text data breaches, but could be metadata or specific cases
+  // "jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "svg"
+  // Source code files might contain hardcoded credentials
+  "java", "cs", "c", "cpp", "h", "hpp", "js", "ts", "html", "css", "scss", "less"
+].join('\n');
+
+
+export const DEFAULT_SEED_URLS = [
+  // Popular paste sites (use with caution and respect ToS)
+  "https://pastebin.com",
+  "https://justpaste.it",
+  "https://throwbin.io",
+  "https://pastes.io",
+  "https://hastebin.com",
+  "https://ghostbin.co",
+  "https://dumpz.org",
+
+  // Code sharing platforms (often have public gists/snippets)
+  "https://gist.github.com/discover",
+  "https://gitlab.com/explore/snippets",
+  "https://bitbucket.org/repo/snippets", // Check current URL for public snippets
+
+  // Forums known for tech discussions / potential leaks (general, not specific Indonesian)
+  "https://raidforums.com", // (Be aware of the nature of this site)
+  "https://breached.vc", // (Successor/related to RaidForums)
+  "https://forum.exploit.in", // Russian-speaking forum
+  "https://stackoverflow.com", // For finding misconfigured code snippets
+  "https://github.com/search?q=泄露&type=code", // GitHub search for "leak" in Chinese, example for specific language searches
+
+  // Indonesian specific (examples, needs refinement and verification)
+  // These are generic and might not be ideal seed URLs without more context.
+  // Crawling government/academic sites directly as seed URLs needs extreme caution and authorization.
+  // "https://*.go.id", // Too broad, not a good seed. Dorks are better for .go.id
+  // "https://*.ac.id", // Too broad
+  // "https://*.co.id", // Too broad
+
+  // Publicly known Indonesian forums or communities where tech discussions happen or data might be shared
+  // (Replace with actual, relevant, and ethically sound URLs)
+  // "https://www.kaskus.co.id/forum/21" // Example: Kaskus Computer Stuff (verify relevance)
+  // "https://www.bersatulawancovid.id/forum" // Example, check for public data sections
+  
+  // Sites for public document sharing
+  "https://www.scribd.com",
+  "https://www.slideshare.net",
+  "https://issuu.com",
+  "https://dokumen.tips", // Indonesian document sharing site
+  "https://pdfcoffee.com",
+  "https://id.scribd.com/", // Scribd Indonesian
+
+  // Public cloud storage buckets (use dorks for these usually, but listing a few known patterns)
+  // These are not direct seed URLs but represent types of URLs that dorks might find
+  // "http://s3.amazonaws.com/", // Base for dorks
+  // "http://storage.googleapis.com/", // Base for dorks
+
+  // Search engines can sometimes list open directories if dorked correctly.
+  // These are not seed URLs but concepts for dorking.
+
+  // It is crucial to ensure these URLs are ethically appropriate to crawl.
+  // For sensitive domains like .go.id, direct deep crawling from a base URL is generally not advised without permission.
+  // Dorks are a more targeted approach.
+].join('\n');
+
+
+export const DEFAULT_SEARCH_DORKS = [
+  // General Sensitive File Dorks
+  'filetype:sql "password" OR "username"',
+  'filetype:env "DB_PASSWORD" OR "API_KEY"',
+  'filetype:log "error" "user_id" "ip_address"',
+  'filetype:bak inurl:backup OR inurl:dump',
+  'filetype:config "prod" "credentials"',
+  'intitle:"index of" "backup"',
+  'intitle:"index of" "database"',
+  'intitle:"index of" "confidential"',
+  'intext:"BEGIN RSA PRIVATE KEY" filetype:key',
+  'intext:"-----BEGIN CERTIFICATE-----" filetype:pem OR filetype:crt',
+  'site:docs.google.com "confidential" OR "private" "shareable_link=anyone"', // Misconfigured Google Docs
+  'site:drive.google.com "confidential" OR "private" "shareable_link=anyone"', // Misconfigured Google Drive
+  'site:onedrive.live.com "confidential" OR "private" "sharing_link"', // Misconfigured OneDrive
+  'site:dropbox.com/s/ "confidential" OR "private"', // Misconfigured Dropbox
+  'site:trello.com "password" OR "api_key"', // Public Trello boards
+  'site:*.s3.amazonaws.com intitle:"index of" OR intext:"bucket"', // Open S3 Buckets
+  'site:storage.googleapis.com intitle:"index of" OR intext:"bucket"', // Open Google Cloud Storage
+  'site:blob.core.windows.net intitle:"index of" OR intext:"container"', // Open Azure Blob Storage
+  'site:digitaloceanspaces.com intitle:"index of"', // Open DigitalOcean Spaces
+
+  // Indonesian Specific Dorks (.go.id - Government)
+  'site:.go.id filetype:pdf "rahasia" OR "sulit"',
+  'site:.go.id filetype:xls "daftar nama" OR "gaji" OR "NIK"',
+  'site:.go.id filetype:docx "surat keputusan" OR "notulen rapat"',
+  'site:.go.id intitle:"index of" "data" OR "backup" OR "archive"',
+  'site:.go.id inurl:admin OR inurl:login "username" "password"', // Risky, check for exposed login pages
+  'site:.go.id filetype:sql "database" OR "users"',
+  'site:.go.id intext:"Nomor Induk Kependudukan" OR intext:"No. KTP"',
+  'site:.go.id filetype:csv "data penduduk" OR "kontak"',
+  'site:.go.id "Powered by WHM" OR "cPanel Login" inurl:/cpanel', // Exposed control panels
+  'site:.go.id inurl:/phpmyadmin/', // Exposed phpMyAdmin
+  'site:.go.id filetype:log "user activity" OR "access log"',
+  'site:.go.id inurl:.zip OR inurl:.rar "backup_data"',
+  'site:.go.id ext:txt confidential OR private',
+  'site:.go.id "kata sandi" OR "nama pengguna" intext:"login"',
+  'site:.go.id filetype:env -example', // .env files not explicitly examples
+  'site:.go.id intext:"API_SECRET" OR intext:"SECRET_KEY"',
+  'site:.go.id intitle:"dashboard" "statistik" -login', // Dashboards that might not require login
+  'site:.go.id filetype:json "user_data" OR "employee_records"',
+  'site:.go.id inurl:uploads "internal_document"', // Check for exposed upload directories
+  'site:.go.id "surat edaran internal" filetype:pdf',
+  'site:.go.id "daftar peserta" "NIK" filetype:xlsx',
+  'site:.go.id intitle:"directory listing" "database_dumps"',
+  'site:.go.id intext:"kartu keluarga" filetype:pdf',
+  'site:.go.id intext:"nomor pokok wajib pajak" OR intext:"NPWP"',
+  'site:.go.id filetype:txt "username" "password" "host"',
+
+  // Indonesian Specific Dorks (.ac.id - Academic)
+  'site:.ac.id filetype:pdf "transkrip nilai" OR "data mahasiswa"',
+  'site:.ac.id filetype:xls "daftar mahasiswa" OR "NIM" OR "IPK"',
+  'site:.ac.id intitle:"index of" "skripsi" OR "tesis" OR "backup_kuliah"',
+  'site:.ac.id inurl:dosen "cv" OR "penelitian" filetype:doc',
+  'site:.ac.id filetype:sql "mahasiswa" OR "users" OR "jadwal_kuliah"',
+  'site:.ac.id intext:"Nomor Induk Mahasiswa" OR intext:"NPM"',
+  'site:.ac.id filetype:csv "kontak dosen" OR "email mahasiswa"',
+  'site:.ac.id inurl:phpmyadmin/setup/', // phpMyAdmin setup pages
+  'site:.ac.id "database dump" filetype:zip OR filetype:sql.gz',
+  'site:.ac.id "backup server" ext:tar.gz',
+  'site:.ac.id filetype:xlsx "absensi" OR "kehadiran"',
+  'site:.ac.id intext:"kartu rencana studi" OR intext:"KRS"',
+  'site:.ac.id intitle:"Sistem Informasi Akademik" "login"',
+  'site:.ac.id filetype:json "student_data" OR "lecture_notes"',
+  'site:.ac.id inurl:repo "confidential_research"', // Check exposed repositories
+
+  // Indonesian Specific Dorks (.co.id, .id, .or.id - Commercial/General/Organization)
+  'site:.co.id filetype:csv "customer data" OR "daftar pelanggan" OR "email" "phone"',
+  'site:.id filetype:xls "employee list" OR "daftar karyawan" OR "gaji"',
+  'site:.or.id filetype:pdf "member list" OR "data anggota" OR "donasi"',
+  'site:.co.id intitle:"index of" "backup_website" OR "database_backup"',
+  'site:.id inurl:api "token" OR "secret" filetype:json', // Check for exposed API tokens
+  'site:.co.id filetype:sql "users" OR "orders" OR "products"',
+  'site:.id intext:"private document" OR "confidential report"',
+  'site:.co.id "internal memo" filetype:docx',
+  'site:.id "financial statement" filetype:pdf OR filetype:xlsx',
+  'site:.or.id inurl:/wp-admin/ "debug.log"', // WordPress debug logs
+  'site:.co.id filetype:env "AWS_ACCESS_KEY_ID" -template -example',
+  'site:.id "invoice" "pelanggan" filetype:pdf',
+  'site:.co.id intitle:"admin panel" -demo -sample',
+  'site:.id filetype:txt "list_user" "password"',
+  'site:.or.id "database connection string" intext:password',
+
+  // Advanced Dorks using operators
+  'allintitle: "admin login" OR "control panel" site:.go.id',
+  'allinurl: backup/db site:.co.id OR site:.id',
+  'intext:"password specified for user" filetype:log site:.ac.id',
+  'related:pastebin.com "data pribadi" OR "NIK"', // Find sites similar to pastebin discussing Indonesian data
+  '"index of /" + "database" site:.go.id',
+  '"index of /" + "confidential" site:.co.id',
+  'filetype:config intext:username intext:password site:.id',
+  'ext:sql intext:wp_users phpmyadmin site:.co.id', // WordPress user table dumps
+  'inurl:/proc/self/cwd site:.go.id', // Exposes current working directory, potential vulns
+  'site:.go.id OR site:.ac.id "error establishing a database connection"', // Database connection errors
+  'site:github.com "go.id" "api_key" OR "password"', // Search GitHub for hardcoded credentials related to .go.id
+  'site:gitlab.com "ac.id" "SECRET_KEY" OR "DB_PASSWORD"',
+  'site:bitbucket.org "co.id" "internal" "credentials"',
+  'site:glitch.com "go.id" ".env"', // Check Glitch for exposed .env files
+  'site:repl.it "ac.id" "config.json" "secret"', // Check Replit
+  'site:codepen.io "co.id" "api" "token"', // Check CodePen
+  'site:.sharepoint.com "internal document" "go.id" - Anfrage', // SharePoint leaks (adjust language if needed)
+  'site:box.com/s/ "confidential" "ac.id"', // Box.com leaks
+  'ext:aspx inurl:export OR inurl:download "data" site:.go.id', // ASPX specific export pages
+  'inurl:_ignition/execute-solution site:.co.id', // Laravel ignition debug mode
+
+  // Dorks targeting specific CMS/Platforms
+  'inurl:/wp-content/uploads/ site:.go.id "daftar" filetype:xls OR filetype:pdf',
+  'inurl:/sites/default/files/ site:.ac.id "internal" filetype:doc', // Drupal
+  'ext:jps inurl:/portal/ "user" site:.go.id', // Liferay portal
+  'inurl:/owa/ site:.go.id', // Outlook Web Access
+
+  // More Indonesian keywords and combinations
+  'filetype:pdf "surat perjanjian" OR "kontrak" site:.co.id',
+  'filetype:xlsx "data keuangan" OR "laporan anggaran" site:.go.id',
+  'site:.id "nomor hp" "alamat" filetype:csv',
+  'intitle:"backup" "database" "sql" site:.ac.id',
+  'site:.go.id intext:"untuk kalangan terbatas"',
+  'site:.co.id "username" "password" "login" inurl:.txt',
+  'site:.ac.id "daftar dosen" "email" "nomor telepon" filetype:pdf',
+  'site:.go.id inurl:ftp "pub" "archive"', // FTP directories
+  'site:.co.id "SOP Keamanan" filetype:pdf',
+  'site:.id intitle:"Data Center" "credentials"',
+
+  // Searching for error messages that expose paths or config
+  'Warning: pg_connect(): Unable to connect to PostgreSQL server: FATAL site:.go.id',
+  'mysql_connect error site:.ac.id',
+  '"failed to open stream: No such file or directory in" "config" site:.co.id',
+  
+  // Specific sensitive documents with common Indonesian naming
+  'filetype:pdf "Surat Keterangan Catatan Kepolisian" OR "SKCK" site:.go.id OR site:.id',
+  'filetype:pdf "Akta Kelahiran" site:.go.id OR site:.id',
+  'filetype:pdf "Kartu Tanda Penduduk" site:.go.id OR site:.id',
+  'filetype:pdf "Nomor Pokok Wajib Pajak" OR "NPWP" site:.go.id OR site:.id',
+  'filetype:pdf "Buku Pemilik Kendaraan Bermotor" OR "BPKB" site:.id',
+  'filetype:xlsx "Daftar Inventaris Barang Milik Negara" OR "Daftar Aset" site:.go.id',
+  'filetype:docx "Rancangan Undang-Undang" OR "RUU" site:.go.id',
+  'filetype:pdf "Hasil Audit Internal" site:.go.id OR site:.co.id',
+  'filetype:xls "Data Rekam Medis Pasien" site:.rs OR site:.co.id', // Assuming .rs for Rumah Sakit
+  'filetype:pdf "Laporan Keuangan Tahunan" site:.co.id OR site:.go.id "confidential"',
+].join('\n');
+
 export const DEFAULT_SETTINGS: SettingsFormData = {
-  keywords: 'password, secret, NIK, no_ktp, nama_lengkap, kk, kartu_keluarga, database, backup, dump, admin, login, username, email, gaji, salary, private_key, api_key, confidential, internal, classified, ".php?id=", ".asp?id=", ".aspx?id=", ".jsp?id=", ".cfm?id="',
-  fileExtensions: 'txt, csv, sql, json, zip, tar.gz, rar, 7z, db, bak, log, config, xls, xlsx, doc, docx, pdf, mdb, accdb, sqlite, eml, pst, ovpn, conf, ini, yml, yaml, kdbx, pfx, pem, key, crt, cer, p12, jks',
-  seedUrls: 'https://pastebin.com\nhttps://gist.github.com\nhttps://slexy.org\nhttps://pastie.io\nhttp://dpaste.com\nhttps://rentry.co\nhttps://justpaste.it',
-  searchDorks: `site:pastebin.com "password"
-site:trello.com "password"
-site:*.s3.amazonaws.com "database_dump"
-site:docs.google.com "confidential"
-inurl:".env" "DB_PASSWORD" -github.com
-inurl:"/wp-content/uploads/" "backup.zip" OR "backup.sql"
-intitle:"index of /" "backup" OR "database"
-filetype:sql "CREATE TABLE" "password"
-filetype:log "Error" "Exception" "Stack Trace"
-filetype:config "username" "password"
-site:*.go.id filetype:pdf "rahasia" OR "internal"
-site:*.ac.id filetype:xls "data mahasiswa" OR "nilai"
-site:*.co.id intitle:"index of /" "backup"
-inurl:admin login site:*.go.id
-inurl:backup intitle:"index of /" site:*.mil.id
-site:*.s3.amazonaws.com "confidential" OR "internal_data"
-site:drive.google.com "company_confidential" OR "internal_report"
-site:sharepoint.com "Project Files" "Internal Use Only"
-site:box.com "Sensitive_Data"
-site:dropbox.com "backup_db"
-intitle:"phpinfo()" "PHP Version" -github
-intext:"index of /" "parent directory" "backup.tar.gz"
-site:*.go.id filetype:sql "INSERT INTO" OR "PASSWORD"
-site:*.ac.id filetype:csv "students" OR "grades"
-site:*.co.id filetype:json "API_KEY" OR "credentials"
-site:*.go.id intitle:"index of" "database" OR "backup"
-site:*.ac.id inurl:/uploads/ "confidential"
-site:*.co.id inurl:admin "login.php" OR "admin.php"
-site:*.go.id filetype:log "error log" OR "debug log"
-site:*.ac.id filetype:config "db_password" OR "secret_key"
-site:*.co.id filetype:bak "database_backup"
-site:*.go.id inurl:/backup/ "db.sql"
-site:*.ac.id inurl:/files/ "internal_document.pdf"
-site:*.co.id intitle:"Directory Listing" ".git"
-site:*.go.id ext:env "APP_KEY"
-site:*.ac.id ext:log "PHP Fatal error"
-site:*.co.id ext:bak "dump.sql"
-site:*.go.id intext:"Powered by phpMyAdmin"
-site:*.ac.id intext:"Version Information" "MySQL"
-site:*.co.id intext:"Welcome to nginx!" "403 Forbidden" -stackoverflow.com
-site:*.go.id filetype:txt "username" "password"
-site:*.ac.id filetype:docx "surat keputusan" "internal"
-site:*.co.id inurl:/_profiler/ "Symfony Profiler"
-site:gitlab.*.* intext:"api_key" intext:"PRIVATE-TOKEN"
-site:*.atlassian.net "API token"
-site:s3-external-1.amazonaws.com OR site:s3.amazonaws.com
-site:blob.core.windows.net
-site:storage.googleapis.com
-site:digitaloceanspaces.com
-site:*.go.id filetype:env "DATABASE_URL" OR "AWS_ACCESS_KEY_ID"
-site:*.ac.id filetype:bak "backup" OR "dump"
-site:*.co.id filetype:csv "customer_data" OR "user_list"
-site:*.go.id intitle:"Index of /" "confidential" OR "private"
-site:*.ac.id inurl:admin "dashboard" OR "settings"
-site:*.co.id filetype:log "access.log" OR "error.log"
-site:*.go.id intext:"phpinfo()" "environment" OR "configuration"
-site:*.ac.id filetype:pem "PRIVATE KEY"
-site:*.co.id inurl:"/api/" "users" "password"
-site:*.go.id filetype:xlsx "data_pegawai" OR "gaji"
-site:*.ac.id filetype:json "credentials" OR "token"
-site:*.co.id intitle:"cPanel" "File Manager"
-site:*.go.id inurl:".git" "config" -github.com
-site:*.ac.id inurl:"/storage/" "logs" OR "backups"
-site:*.co.id filetype:pem "BEGIN RSA PRIVATE KEY"
-site:osf.io "password"
-site:figshare.com "api_key"
-site:data.world "confidential"
-site:*.medium.com "internal" "password"
-site:slack.com "oauth token" "xoxp-"
-site:*.sharepoint.com "confidential" filetype:xlsx
-site:*.box.com "internal" filetype:pdf
-site:dev.azure.com "secrets"
-site:*.firebaseio.com ".json?auth="
-site:*.cloudfunctions.net "token"
-site:*.supabase.co "service_key"
-site:*.go.id inurl:/tmp/ "backup.sql.gz"
-site:*.ac.id inurl:/old/ "database.bak"
-site:*.co.id inurl:/includes/ "config.php"
-site:*.go.id filetype:sh "export AWS_SECRET_ACCESS_KEY"
-site:*.ac.id filetype:sql "pg_dump" "user"
-site:*.co.id filetype:txt "BEGIN PGP PRIVATE KEY BLOCK"
-site:*.go.id intitle:"Index of /" "secret_files"
-site:*.ac.id inurl:"/api/v1/users" "email"
-site:*.co.id filetype:json "Authorization: Bearer"
-site:*.go.id filetype:csv "data_sensitif"
-site:*.ac.id inurl:"/_ignition/execute-solution" "Solution"
-site:*.co.id filetype:log "failed login" "ip_address"
-site:*.go.id filetype:config "ldap_password"
-site:*.ac.id filetype:yml "docker-compose" "environment"
-site:*.co.id filetype:txt "ssh-rsa" "PRIVATE KEY"
-site:paste.ee "password"
-site:ghostbin.co "API_SECRET"
-site:ideone.com "credentials"
-site:codepen.io "private_token"
-site:jsfiddle.net "db_password"
-site:repl.it "secret_key" -docs
-site:glitch.com ".env"
-site:bitbucket.org "password" "pipeline"
-site:sourceforge.net "dump.sql"
-site:codeberg.org "config.ini" "secret"`,
+  keywords: DEFAULT_KEYWORDS,
+  fileExtensions: DEFAULT_FILE_EXTENSIONS,
+  seedUrls: DEFAULT_SEED_URLS,
+  searchDorks: DEFAULT_SEARCH_DORKS,
   crawlDepth: 2,
   respectRobotsTxt: true,
   requestDelay: 1.0,
-  customUserAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 BreachWatchResearchBot/1.1',
+  customUserAgent: '',
   maxResultsPerDork: 20,
   maxConcurrentRequestsPerDomain: 2,
   scheduleEnabled: false,
   scheduleType: 'one-time',
-  scheduleCronExpression: '0 0 * * *', // Default to daily at midnight if recurring
-  scheduleRunAtDate: new Date().toISOString().split('T')[0], // Today's date
-  scheduleRunAtTime: '00:00', // Midnight
-  scheduleTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone, // User's current timezone
+  scheduleCronExpression: '0 0 * * *', // Daily at midnight
+  scheduleRunAtDate: format(new Date(), 'yyyy-MM-dd'),
+  scheduleRunAtTime: format(new Date(), 'HH:mm'),
+  scheduleTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
 };
 
-
-// For FileTypeIcon component
-export const FILE_TYPE_EXTENSIONS: Record<string, string[]> = {
-    text: ['txt', 'md', 'log', 'csv', 'tsv', 'rtf', 'xml', 'html', 'htm', 'css', 'js', 'conf', 'cfg', 'ini', 'out', 'asc', 'pem', 'key', 'crt', 'cer', 'pem', 'ca-bundle', 'csr', 'pub'],
-    json: ['json', 'jsonl', 'geojson'],
-    database: ['sql', 'db', 'sqlite', 'mdb', 'accdb', 'dump', 'bak'],
-    archive: ['zip', 'tar', 'gz', 'bz2', '7z', 'rar', 'tgz', 'xz'],
-    code: ['py', 'java', 'c', 'cpp', 'cs', 'go', 'rb', 'php', 'swift', 'kt', 'scala', 'pl', 'sh', 'bat', 'ps1', 'ipynb', 'env', 'yml', 'yaml', 'toml', 'dockerfile', 'kdbx'],
-    spreadsheet: ['xls', 'xlsx', 'ods', 'csv'], // CSV is also text, but can be primarily spreadsheet
-    document: ['pdf', 'doc', 'docx', 'odt', 'ppt', 'pptx', 'odp'],
-    config: ['config', 'ini', 'conf', 'cfg', 'cnf', 'properties', 'prefs', 'settings', 'reg', 'plist', 'ovpn'],
-    image: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'tiff'],
-    audio: ['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a'],
-    video: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv'],
+// File type categorization for icons and filtering (can be expanded)
+export const FILE_TYPE_EXTENSIONS = {
+  text: ['txt', 'log', 'md', 'csv', 'tsv', 'rtf', 'srt', 'sub', 'asc'],
+  json: ['json', 'geojson', 'jsonl'],
+  database: ['sql', 'db', 'sqlite', 'mdb', 'sqlite3', 'dump'],
+  archive: ['zip', 'rar', 'tar', 'gz', '7z', 'bz2', 'tgz', 'tar.gz', 'tar.bz2'],
+  code: ['php', 'js', 'ts', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'rb', 'go', 'swift', 'kt', 'sh', 'bat', 'ps1', 'html', 'htm', 'css', 'scss', 'less', 'xml', 'yaml', 'yml', 'ini', 'conf', 'config', 'cfg', 'env'],
+  spreadsheet: ['xls', 'xlsx', 'ods'],
+  document: ['doc', 'docx', 'pdf', 'odt', 'ppt', 'pptx', 'odp', 'pages', 'key'],
+  config: ['ini', 'conf', 'config', 'cfg', 'env', 'yaml', 'yml', 'toml', 'xml', 'json'], // some overlap with code/json
+  image: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico', 'tif', 'tiff'],
+  audio: ['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a'],
+  video: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv']
 };

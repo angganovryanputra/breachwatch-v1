@@ -1,5 +1,5 @@
 // src/services/breachwatch-api.ts
-import type { SettingsFormData, DownloadedFileEntry, CrawlJob, ScheduleData } from '@/types';
+import type { SettingsFormData, DownloadedFileEntry, CrawlJob, ScheduleData, UserPreferences } from '@/types';
 import { NEXT_PUBLIC_BACKEND_API_URL } from '@/config/config';
 
 // Helper to construct full API URLs
@@ -16,6 +16,8 @@ async function apiRequest<T>(
     method,
     headers: {
       'Content-Type': 'application/json',
+      // In a real app, Authorization header with JWT token would be added here
+      // 'Authorization': `Bearer ${getToken()}`,
     },
   };
 
@@ -28,6 +30,10 @@ async function apiRequest<T>(
     if (!response.ok) {
       const errorData = await response.text().catch(() => 'Failed to parse error response');
       console.error(`API Error: ${response.status} ${response.statusText} for ${method} ${url}`, errorData);
+      // For 404 on GET preferences, we might want to return null instead of throwing an error.
+      if (method === 'GET' && response.status === 404 && path.includes('/preferences')) {
+        return null as T;
+      }
       throw new Error(`API request failed: ${response.status} ${response.statusText}. Details: ${errorData}`);
     }
     if (response.status === 204 || response.headers.get('content-length') === '0') { 
@@ -103,6 +109,23 @@ export const getDownloadedFiles = async (jobId?: string, skip: number = 0, limit
 
 export const deleteDownloadedFileRecord = async (fileId: string, deletePhysical: boolean = false): Promise<void> => {
   return apiRequest<void>(`/crawl/results/downloaded/${fileId}`, 'DELETE', { delete_physical: deletePhysical });
+};
+
+
+// --- User Preferences Endpoints ---
+// Assuming user_id will be passed. In a real app, this would come from the auth token on the backend.
+export const getUserPreferences = async (userId: string): Promise<UserPreferences | null> => {
+  return apiRequest<UserPreferences | null>(`/users/${userId}/preferences`, 'GET');
+};
+
+export const updateUserPreferences = async (userId: string, preferences: Omit<UserPreferences, 'user_id' | 'updated_at'>): Promise<UserPreferences> => {
+  // The backend will set user_id and updated_at.
+  // We only send the preference fields.
+  const payload = {
+      default_items_per_page: preferences.default_items_per_page,
+      receive_email_notifications: preferences.receive_email_notifications,
+  };
+  return apiRequest<UserPreferences>(`/users/${userId}/preferences`, 'PUT', payload);
 };
 
 

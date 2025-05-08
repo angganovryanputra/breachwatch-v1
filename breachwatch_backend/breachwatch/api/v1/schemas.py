@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl, Field, field_validator
+from pydantic import BaseModel, HttpUrl, Field, field_validator, EmailStr
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import uuid
@@ -45,7 +45,7 @@ class ScheduleSchema(BaseModel):
 class CrawlSettingsSchema(BaseModel):
     keywords: List[str] = Field(..., example=["password", "NIK", "confidential"])
     file_extensions: List[str] = Field(..., example=[".txt", ".sql", ".zip"])
-    seed_urls: List[HttpUrl] = Field(..., example=["https://example.com/forum", "https://pastebin.com"])
+    seed_urls: List[str] = Field(..., example=["https://example.com/forum", "https://pastebin.com"]) # Changed to List[str]
     search_dorks: List[str] = Field(..., example=['filetype:sql "passwords"', 'intitle:"index of" "backup"'])
     crawl_depth: int = Field(default=2, ge=0, le=10)
     respect_robots_txt: bool = True
@@ -81,8 +81,8 @@ class CrawlJobSchema(CrawlJobCreateSchema):
 # --- Result Schemas ---
 class BreachDataSchema(BaseModel):
     id: uuid.UUID
-    source_url: HttpUrl
-    file_url: HttpUrl
+    source_url: str # Changed to str
+    file_url: str # Changed to str
     file_type: str
     date_found: datetime
     keywords_found: List[str]
@@ -96,6 +96,49 @@ class DownloadedFileSchema(BreachDataSchema):
     local_path: Optional[str] = None 
     file_size_bytes: Optional[int] = None
     checksum_md5: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+# --- User & Auth Schemas ---
+class UserBaseSchema(BaseModel):
+    email: EmailStr
+    full_name: Optional[str] = None
+    is_active: bool = True
+    role: str = Field(default="user", pattern="^(user|admin)$") # Enforce specific roles
+
+class UserCreateSchema(UserBaseSchema):
+    password: str = Field(min_length=8)
+
+class UserSchema(UserBaseSchema):
+    id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class TokenSchema(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenDataSchema(BaseModel):
+    email: Optional[str] = None
+    user_id: Optional[uuid.UUID] = None # Store user ID in token data
+
+# --- User Preferences Schemas ---
+class UserPreferenceBaseSchema(BaseModel):
+    default_items_per_page: int = Field(default=10, ge=5, le=100)
+    receive_email_notifications: bool = True
+    # Add other preferences here
+
+class UserPreferenceUpdateSchema(UserPreferenceBaseSchema):
+    # Inherits fields from base, can add specific validation if needed
+    pass
+
+class UserPreferenceSchema(UserPreferenceBaseSchema):
+    user_id: uuid.UUID
+    updated_at: datetime
 
     class Config:
         from_attributes = True
