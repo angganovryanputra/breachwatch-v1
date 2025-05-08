@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -369,7 +370,7 @@ export default function CrawlJobsPage() {
                                     <p><strong>Depth:</strong> {job.settings.crawl_depth}</p>
                                     <p><strong>Delay:</strong> {job.settings.request_delay_seconds}s</p>
                                     {job.settings.custom_user_agent && <p><strong>User Agent:</strong> Custom</p>}
-                                    {job.settings.schedule && <p><strong>Schedule:</strong> {job.settings.schedule.type === 'recurring' ? `Recurring (${job.settings.schedule.cronExpression})` : `One-time ${job.settings.schedule.run_at ? format(parseISO(job.settings.schedule.run_at), 'PPp') : '(Date N/A)'}`}{job.settings.schedule.timezone ? ` [${job.settings.schedule.timezone}]` : ''}</p>}
+                                    {job.settings.schedule && <p><strong>Schedule:</strong> {job.settings.schedule.type === 'recurring' ? `Recurring (${job.settings.schedule.cronExpression})` : `One-time ${job.settings.schedule.runAt ? format(parseISO(job.settings.schedule.runAt), 'PPp') : '(Date N/A)'}`}{job.settings.schedule.timezone ? ` [${job.settings.schedule.timezone}]` : ''}</p>}
                                 </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>

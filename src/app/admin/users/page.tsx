@@ -96,7 +96,7 @@ export default function UserManagementPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[80px]"></TableHead> {/* Avatar */}
+                    <TableHead className="w-[80px]"></TableHead>{/* Avatar */}
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Role</TableHead>
