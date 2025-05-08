@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,7 +39,7 @@ const settingsFormValidationSchema = z.object({
   seedUrls: z.string().min(1, { message: "Seed URLs are required." })
     .refine(value => {
       const urls = value.split('\n').map(url => url.trim()).filter(url => url);
-      if (urls.length === 0) return false;
+      if (urls.length === 0) return false; // Ensure at least one URL after filtering
       try {
         return urls.every(url => new URL(url).protocol.startsWith('http'));
       } catch (e) {
@@ -98,8 +99,13 @@ export default function SettingsPage() {
       try {
         const parsedSettings = JSON.parse(storedSettings);
         // Ensure date is correctly formatted for input type="date"
-        if (parsedSettings.scheduleRunAtDate) {
-            parsedSettings.scheduleRunAtDate = format(new Date(parsedSettings.scheduleRunAtDate), 'yyyy-MM-dd');
+        if (parsedSettings.scheduleRunAtDate && typeof parsedSettings.scheduleRunAtDate === 'string') {
+            // Check if it's already in yyyy-MM-dd format, otherwise parse and reformat
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(parsedSettings.scheduleRunAtDate)) {
+                 parsedSettings.scheduleRunAtDate = format(new Date(parsedSettings.scheduleRunAtDate), 'yyyy-MM-dd');
+            }
+        } else if (parsedSettings.scheduleRunAtDate instanceof Date){
+             parsedSettings.scheduleRunAtDate = format(parsedSettings.scheduleRunAtDate, 'yyyy-MM-dd');
         }
         reset(parsedSettings);
       } catch (e) {
@@ -315,7 +321,7 @@ export default function SettingsPage() {
                                 name="scheduleTimezone"
                                 control={control}
                                 render={({ field }) => (
-                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <Select onValueChange={field.onChange} value={field.value || ''}>
                                         <SelectTrigger id="scheduleTimezone">
                                             <SelectValue placeholder="Select timezone"/>
                                         </SelectTrigger>
@@ -366,7 +372,7 @@ export default function SettingsPage() {
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="scheduleRunAtTime">Run Time (HH:MM)</Label>
-                                <Controller name="scheduleRunAtTime" control={control} render={({ field }) => (<Input id="scheduleRunAtTime" type="time" className={`${errors.scheduleRunAtTime ? 'border-destructive' : ''}`} {...field} />)} />
+                                <Controller name="scheduleRunAtTime" control={control} render={({ field }) => (<Input id="scheduleRunAtTime" type="time" className={`${errors.scheduleRunAtTime ? 'border-destructive' : ''}`} {...field} value={field.value || ''}/>)} />
                                 {errors.scheduleRunAtTime && <p className="text-sm text-destructive">{errors.scheduleRunAtTime.message}</p>}
                             </div>
                         </div>
