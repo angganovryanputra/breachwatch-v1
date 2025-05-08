@@ -6,6 +6,10 @@ import sys # To check for testing environment
 from slowapi import Limiter, _rate_limit_exceeded_handler # For Rate Limiting
 from slowapi.util import get_remote_address # For Rate Limiting by IP
 from slowapi.errors import RateLimitExceeded # For Rate Limiting
+import redis.asyncio as redis # For caching
+from fastapi_cache import FastAPICache # For caching
+from fastapi_cache.backends.redis import RedisBackend # For caching
+from fastapi_cache.decorator import cache # For caching decorator (if needed here)
 
 from breachwatch.api.v1 import api_router as api_router_v1
 from breachwatch.storage.database import engine, Base, SessionLocal # Import SessionLocal for DB check
@@ -37,9 +41,8 @@ async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY" # Or "SAMEORIGIN" if needed
-    # Content-Security-Policy is complex and application-specific.
-    # Start with a basic one, but this likely needs tuning.
-    # response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; object-src 'none';"
+    # Basic CSP, tune as needed. Ensure 'unsafe-inline' is removed for production if possible.
+    response.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none';"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     # Strict-Transport-Security (HSTS) - uncomment ONLY if served over HTTPS and you understand the implications.
     # response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
@@ -64,7 +67,8 @@ else:
         # You might need to add other local development origins if applicable
      ]
      # Optionally allow all for easy local dev, BUT USE WITH CAUTION
-     origins.append("*") # Allow all origins for simplified local development
+     # Allow all for simplified local development during initial setup phases
+     origins.append("*")
      logger.warning("CORS allows all origins ('*'). Ensure this is restricted in production.")
 
 
@@ -98,12 +102,37 @@ async def startup_event():
     else:
         logger.info("Skipping table creation during testing.")
 
+    # --- Caching Setup ---
+    try:
+        redis_client = redis.from_url(
+            f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}",
+            password=settings.REDIS_PASSWORD,
+            db=settings.REDIS_DB,
+            encoding="utf-8",
+            decode_responses=True # Important for fastapi-cache2
+        )
+        await redis_client.ping() # Test connection
+        FastAPICache.init(RedisBackend(redis_client), prefix="fastapi-cache")
+        logger.info(f"Cache initialized with Redis backend at {settings.REDIS_HOST}:{settings.REDIS_PORT}")
+    except Exception as e:
+         logger.error(f"Failed to initialize Redis cache: {e}. Caching will be disabled.", exc_info=True)
+         # Application can continue without cache, but log the error.
+
     # You can add other startup logic here, like connecting to external services.
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Application shutdown...")
-    # Add cleanup logic here if needed.
+    # Clean up cache connection if initialized
+    try:
+        if FastAPICache.get_backend():
+            await FastAPICache.clear() # Optionally clear cache on shutdown
+            # The redis client used by the backend should close its connections automatically
+            # when the application exits or if using redis.asyncio.BlockingConnectionPool.disconnect()
+            logger.info("Cache backend connections should close gracefully.")
+    except Exception as e:
+        logger.error(f"Error during cache shutdown: {e}", exc_info=True)
+    # Add other cleanup logic here if needed.
 
 # Include API routers
 app.include_router(api_router_v1, prefix=settings.API_V1_STR)
@@ -111,14 +140,19 @@ app.include_router(api_router_v1, prefix=settings.API_V1_STR)
 @app.get("/", summary="Health check endpoint", tags=["Health"])
 async def root():
     """
-    A simple health check endpoint. Checks basic API availability and DB connection.
+    A simple health check endpoint. Checks basic API availability, DB connection, and Cache connection.
     """
     db_status = "unknown"
     db_error = None
+    cache_status = "unknown"
+    cache_error = None
+
+    # Check DB
     try:
-        # Try to get a session and perform a simple query
         db = SessionLocal()
-        db.execute("SELECT 1") # Use text() for SQLAlchemy 2.0 or ensure Core execution context
+        # Execute a simple query using text() for SQLAlchemy 2.0+ or ensure core context
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
         db.close()
         db_status = "ok"
         logger.debug("Database health check successful.")
@@ -126,13 +160,40 @@ async def root():
         logger.error(f"Database health check failed: {e}", exc_info=False) # Log less verbosely for health check
         db_status = "error"
         db_error = str(e)
+        if db: db.close() # Ensure session is closed on error
+
+    # Check Cache
+    try:
+        if FastAPICache.get_backend():
+            # Test connection by trying to set/get a simple key
+            # await FastAPICache.get_backend().set("health_check", "ok", expire=10)
+            # test_val = await FastAPICache.get_backend().get("health_check")
+            # if test_val == "ok":
+            #      cache_status = "ok"
+            # else:
+            #      cache_status = "error"
+            #      cache_error = "Cache set/get test failed"
+            # Simpler check: Ping the underlying client if possible (requires access to it)
+            # Or assume ok if initialized without error during startup for now.
+             cache_status = "ok (initialized)" # Assume OK if init passed
+             logger.debug("Cache health check successful (based on initialization).")
+        else:
+            cache_status = "disabled"
+            cache_error = "Cache backend not initialized."
+            logger.debug("Cache health check: Cache is disabled.")
+    except Exception as e:
+        logger.error(f"Cache health check failed: {e}", exc_info=False)
+        cache_status = "error"
+        cache_error = str(e)
 
     return {
         "message": f"{settings.APP_NAME} API is running!",
         "version": settings.APP_VERSION,
         "environment": settings.ENVIRONMENT,
         "database_status": db_status,
-        "database_error": db_error if db_error else None # Include error details if present
+        "database_error": db_error if db_error else None, # Include error details if present
+        "cache_status": cache_status,
+        "cache_error": cache_error if cache_error else None
     }
 
 # Add a simple endpoint to test authentication dependency

@@ -65,6 +65,12 @@ class AppSettings(BaseModel):
     DB_PORT: Optional[str] = os.getenv("DB_PORT") # Store as string, convert to int later if needed
     DB_NAME: Optional[str] = os.getenv("DB_NAME")
 
+    # Redis Configuration for Caching
+    REDIS_HOST: str = Field(default_factory=lambda: os.getenv("REDIS_HOST", "localhost"))
+    REDIS_PORT: int = Field(default_factory=lambda: int(os.getenv("REDIS_PORT", "6379")))
+    REDIS_PASSWORD: Optional[str] = os.getenv("REDIS_PASSWORD", None)
+    REDIS_DB: int = Field(default_factory=lambda: int(os.getenv("REDIS_DB", "0")))
+
     # API & Logging
     API_V1_STR: str = "/api/v1"
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -133,12 +139,15 @@ class AppSettings(BaseModel):
 
 
     @validator("SECRET_KEY", always=True)
-    def check_secret_key(cls, v: str) -> str:
+    def check_secret_key(cls, v: Optional[str]) -> str:
         if v is None or len(v) < 32: # Check length for minimum security
              logger.warning("SECRET_KEY is not set or is too short. Generating a temporary secure key. Set a persistent SECRET_KEY in your .env file for production!")
              return secrets.token_hex(32)
-        if v == secrets.token_hex(32): # If it's the default generated one
-              logger.warning("Using default generated SECRET_KEY. Set a persistent SECRET_KEY in your .env file for production!")
+        # Don't log the key itself, just check it was provided
+        if os.getenv("SECRET_KEY") == v:
+             logger.debug("Using SECRET_KEY from environment.")
+        else:
+             logger.debug("Using generated SECRET_KEY (or one from non-standard source).")
         return v
 
     class Config:
@@ -184,7 +193,15 @@ def get_settings() -> AppSettings:
              # ENV vars will override these if set, via Pydantic's loading mechanism
         }
          # Ensure OUTPUT_LOCATIONS contains APP_BASE_DIR for its validator
-        initial_data["OUTPUT_LOCATIONS"]["APP_BASE_DIR"] = effective_app_base_dir
+        if 'OUTPUT_LOCATIONS' in initial_data and isinstance(initial_data['OUTPUT_LOCATIONS'], dict):
+            initial_data["OUTPUT_LOCATIONS"]["APP_BASE_DIR"] = effective_app_base_dir
+        elif 'OUTPUT_LOCATIONS' in initial_data: # If it exists but is not a dict (e.g. just the path string)
+             # This path shouldn't normally be hit with current logic, but handle defensively
+             logger.warning("OUTPUT_LOCATIONS in YAML was not a dictionary. Trying to handle.")
+             output_path = initial_data['OUTPUT_LOCATIONS']
+             initial_data['OUTPUT_LOCATIONS'] = {'downloaded_files': str(output_path), 'APP_BASE_DIR': effective_app_base_dir}
+        else: # If not present at all
+              initial_data['OUTPUT_LOCATIONS'] = {'downloaded_files': 'data/downloaded_files/fallback', 'APP_BASE_DIR': effective_app_base_dir}
 
 
         # Pydantic will now initialize using:
@@ -204,6 +221,8 @@ def get_settings() -> AppSettings:
 
             logger.debug(f"Downloaded files location: {_settings_instance.OUTPUT_LOCATIONS.downloaded_files}")
             logger.debug(f"Log Level set to: {_settings_instance.LOG_LEVEL}")
+            logger.debug(f"Redis configured at: {_settings_instance.REDIS_HOST}:{_settings_instance.REDIS_PORT} (DB: {_settings_instance.REDIS_DB})")
+
 
         except Exception as e:
             logger.error(f"Error initializing AppSettings with Pydantic: {e}", exc_info=True)
@@ -248,3 +267,8 @@ if __name__ == "__main__":
     print(f"Is output path absolute? {settings.OUTPUT_LOCATIONS.downloaded_files.is_absolute()}")
     if not settings.OUTPUT_LOCATIONS.downloaded_files.parent.exists():
         print(f"Warning: Parent directory for downloads does not exist: {settings.OUTPUT_LOCATIONS.downloaded_files.parent}")
+
+    print(f"Redis Host: {settings.REDIS_HOST}")
+    print(f"Redis Port: {settings.REDIS_PORT}")
+    print(f"Redis DB: {settings.REDIS_DB}")
+    print(f"Redis Password Set: {'Yes' if settings.REDIS_PASSWORD else 'No'}")

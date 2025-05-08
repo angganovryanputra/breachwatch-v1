@@ -14,8 +14,10 @@ zoneinfo; python_version < "3.9" # Backport for zoneinfo if needed
 tzdata # Provides timezone database often needed by zoneinfo
 python-jose[cryptography]>=3.3.0 # For JWT handling
 slowapi>=0.1.9 # Added for Rate Limiting
+redis>=4.0 # Added for caching backend
+fastapi-cache2[redis]>=0.2.0 # Added for FastAPI caching integration
 # cryptography is needed by jose for certain algorithms like HS256
 
 # For potential future Celery integration
 # celery>=5.0
-# redis>=4.0
+# redis>=4.0 # Already included above

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body, status as http_stat
 from sqlalchemy.orm import Session
 import uuid
 from typing import List
+from fastapi_cache.decorator import cache # Import cache decorator
 
 from breachwatch.api.v1 import schemas
 from breachwatch.storage import crud, models
@@ -17,6 +18,7 @@ router = APIRouter()
 # --- User Management Endpoints (Admin Required) ---
 
 @router.get("", response_model=List[schemas.UserSchema], dependencies=[Depends(require_admin_user)])
+@cache(expire=300) # Cache user list for 5 minutes
 async def read_users(
     skip: int = 0,
     limit: int = 100,
@@ -30,7 +32,8 @@ async def read_users(
     users = crud.get_users(db=db, skip=skip, limit=limit)
     return users
 
-@router.get("/{user_id}", response_model=schemas.UserSchema, dependencies=[Depends(require_admin_user)])
+@router.get("/{user_id}", response_model=schemas.UserSchema], dependencies=[Depends(require_admin_user)])
+@cache(expire=300) # Cache individual user for 5 minutes
 async def read_user(
     user_id: uuid.UUID,
     db: Session = Depends(get_db)
@@ -64,7 +67,14 @@ async def update_user_status_endpoint(
     logger.info(f"Admin action: Updating status for user ID: {user_id} to is_active={status_update.is_active}")
     updated_user = crud.update_user_status(db=db, user_id=user_id, is_active=status_update.is_active)
     if updated_user is None:
-        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="User not found")
+        db.rollback() # Ensure rollback if update failed
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="User not found or update failed")
+    # Commit the change after successful update in crud
+    db.commit()
+    # Invalidate cache for this user and the user list
+    from fastapi_cache import FastAPICache
+    await FastAPICache.clear(namespace=f"UserSchema:{user_id}")
+    await FastAPICache.clear(namespace="read_users") # Invalidate entire list cache
     logger.info(f"Status updated successfully for user ID: {user_id}")
     return updated_user
 
@@ -86,7 +96,13 @@ async def update_user_role_endpoint(
     logger.info(f"Admin action: Updating role for user ID: {user_id} to role={role_update.role}")
     updated_user = crud.update_user_role(db=db, user_id=user_id, role=role_update.role)
     if updated_user is None:
-        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="User not found")
+        db.rollback()
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="User not found or update failed")
+    db.commit()
+    # Invalidate cache
+    from fastapi_cache import FastAPICache
+    await FastAPICache.clear(namespace=f"UserSchema:{user_id}")
+    await FastAPICache.clear(namespace="read_users")
     logger.info(f"Role updated successfully for user ID: {user_id}")
     return updated_user
 
@@ -108,7 +124,13 @@ async def delete_user_endpoint(
     logger.info(f"Admin action: Attempting to delete user ID: {user_id}")
     deleted_user = crud.delete_user_by_id(db=db, user_id=user_id)
     if deleted_user is None:
-        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="User not found")
+        db.rollback()
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="User not found or deletion failed")
+    db.commit()
+    # Invalidate cache
+    from fastapi_cache import FastAPICache
+    await FastAPICache.clear(namespace=f"UserSchema:{user_id}")
+    await FastAPICache.clear(namespace="read_users")
     logger.info(f"User deleted successfully: ID {user_id}")
     return None # No content on successful deletion
 
@@ -147,8 +169,78 @@ async def change_current_user_password(
 
     if not updated_user:
          # This shouldn't happen if user was found earlier, but handle defensively
+        db.rollback()
         logger.error(f"Failed to update password for user {user_id} after verification.")
         raise HTTPException(status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not update password")
 
+    db.commit()
+    # Optionally invalidate user cache if password change should affect cached user data (unlikely for basic reads)
+    # from fastapi_cache import FastAPICache
+    # await FastAPICache.clear(namespace=f"UserSchema:{user_id}")
     logger.info(f"Password successfully changed for user ID: {user_id}")
     return schemas.MessageResponseSchema(message="Password updated successfully")
+
+# --- User Preferences Endpoints (for logged-in user) ---
+
+@router.get("/me/preferences", response_model=schemas.UserPreferenceSchema)
+@cache(namespace="UserPreferenceSchema", expire=300) # Cache preferences for 5 minutes, namespace by user? (Needs custom key builder)
+async def read_current_user_preferences(
+    current_user: models.User = Depends(get_current_active_user), # Inject authenticated user
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve preferences for the currently authenticated user.
+    """
+    user_id = current_user.id
+    logger.info(f"Fetching preferences for current user ID: {user_id}")
+    db_preferences = crud.get_user_preferences(db=db, user_id=user_id)
+    if db_preferences is None:
+        logger.warning(f"Preferences not found for user ID: {user_id}. Creating default preferences.")
+        # If preferences don't exist, create and return defaults
+        default_prefs_schema = schemas.UserPreferenceUpdateSchema() # Gets defaults
+        db_preferences = crud.update_or_create_user_preferences(
+             db=db,
+             user_id=user_id,
+             preferences_in=default_prefs_schema
+        )
+        if not db_preferences: # Handle potential error during default creation
+            db.rollback()
+            logger.error(f"Failed to create default preferences for user {user_id}")
+            raise HTTPException(status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not retrieve or create preferences")
+        db.commit() # Commit the newly created preferences
+
+    return db_preferences
+
+
+@router.put("/me/preferences", response_model=schemas.UserPreferenceSchema)
+async def update_current_user_preferences(
+    preferences_in: schemas.UserPreferenceUpdateSchema,
+    current_user: models.User = Depends(get_current_active_user), # Inject authenticated user
+    db: Session = Depends(get_db)
+):
+    """
+    Update preferences for the currently authenticated user.
+    Creates preferences if they don't exist.
+    """
+    user_id = current_user.id
+    logger.info(f"Updating preferences for current user ID: {user_id}")
+
+    # User existence is guaranteed by get_current_active_user dependency
+
+    db_preferences = crud.update_or_create_user_preferences(
+        db=db,
+        user_id=user_id,
+        preferences_in=preferences_in
+    )
+
+    if db_preferences is None: # Should not happen if user exists, but defensive check
+        db.rollback()
+        logger.error(f"Failed to update or create preferences for user ID: {user_id}")
+        raise HTTPException(status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not save preferences")
+
+    db.commit() # Commit the update/creation
+    # Invalidate cache for this user's preferences
+    from fastapi_cache import FastAPICache
+    await FastAPICache.clear(namespace="UserPreferenceSchema") # Clear entire namespace or use specific key if possible
+    logger.info(f"Preferences successfully updated for user ID: {user_id}")
+    return db_preferences
