@@ -1,24 +1,52 @@
 
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import sys # To check for testing environment
+from slowapi import Limiter, _rate_limit_exceeded_handler # For Rate Limiting
+from slowapi.util import get_remote_address # For Rate Limiting by IP
+from slowapi.errors import RateLimitExceeded # For Rate Limiting
 
 from breachwatch.api.v1 import api_router as api_router_v1
 from breachwatch.storage.database import engine, Base, SessionLocal # Import SessionLocal for DB check
 from breachwatch.utils.config_loader import get_settings
 from breachwatch import models # Ensure models are imported so Base knows about them
+from breachwatch.api.v1.endpoints import auth # Import auth for testing endpoint
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# --- Rate Limiting Setup ---
+limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"]) # Example: 100 requests per minute per IP
+
+# --- FastAPI App Initialization ---
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
-# CORS (Cross-Origin Resource Sharing)
+# Add SlowAPI Rate Limiter State and Exception Handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# --- Security Headers Middleware ---
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY" # Or "SAMEORIGIN" if needed
+    # Content-Security-Policy is complex and application-specific.
+    # Start with a basic one, but this likely needs tuning.
+    # response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; object-src 'none';"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Strict-Transport-Security (HSTS) - uncomment ONLY if served over HTTPS and you understand the implications.
+    # response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+# --- CORS Middleware ---
 # Adjust origins as necessary for your frontend.
 # Using ["*"] for development is convenient but less secure.
 # For production, replace "*" with the actual frontend URL(s).
@@ -36,10 +64,11 @@ else:
         # You might need to add other local development origins if applicable
      ]
      # Optionally allow all for easy local dev, BUT USE WITH CAUTION
-     # origins.append("*") # Uncomment for maximum permissiveness locally
-     logger.info(f"CORS configured for Development environment. Allowed origins: {origins}")
+     origins.append("*") # Allow all origins for simplified local development
+     logger.warning("CORS allows all origins ('*'). Ensure this is restricted in production.")
 
 
+# Add CORS Middleware *after* Security Headers and Rate Limiter middleware if order matters
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins, # Use the configured origins
@@ -47,6 +76,9 @@ app.add_middleware(
     allow_methods=["*"], # Allows all standard methods
     allow_headers=["*"], # Allows all headers, consider restricting in production if needed
 )
+
+# Apply the rate limiter to all requests
+app.middleware('http')(limiter.limit())
 
 @app.on_event("startup")
 async def startup_event():
@@ -86,7 +118,7 @@ async def root():
     try:
         # Try to get a session and perform a simple query
         db = SessionLocal()
-        db.execute("SELECT 1")
+        db.execute("SELECT 1") # Use text() for SQLAlchemy 2.0 or ensure Core execution context
         db.close()
         db_status = "ok"
         logger.debug("Database health check successful.")
@@ -121,6 +153,7 @@ if __name__ == "__main__":
          "breachwatch.main:app",
          host="0.0.0.0",
          port=8000,
-         reload=True, # Disable reload in production
+         reload=settings.ENVIRONMENT == "development", # Enable reload only in development
          log_level=settings.LOG_LEVEL.lower() # Sync uvicorn log level
      )
+
