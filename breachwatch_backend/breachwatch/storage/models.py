@@ -12,8 +12,9 @@ class CrawlJob(Base):
     __tablename__ = "crawl_jobs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String, index=True)
-    status = Column(String, default="pending", index=True) # pending, running, completed, failed, stopping, completed_empty, scheduled
+    # Added length constraint (255 seems reasonable for a name)
+    name = Column(String(255), index=True)
+    status = Column(String(50), default="pending", index=True) # Added length constraint
 
     # Crawler settings directly on the job model (using JSONB for flexibility)
     settings_keywords = Column(JSONB)
@@ -26,13 +27,14 @@ class CrawlJob(Base):
     settings_use_search_engines = Column(Boolean)
     settings_max_results_per_dork = Column(Integer, nullable=True)
     settings_max_concurrent_requests_per_domain = Column(Integer, nullable=True)
-    settings_custom_user_agent = Column(String, nullable=True)
+    # Added length constraint
+    settings_custom_user_agent = Column(String(255), nullable=True)
 
     # Scheduling settings
-    settings_schedule_type = Column(String, nullable=True) # 'one-time' or 'recurring'
-    settings_schedule_cron_expression = Column(String, nullable=True)
+    settings_schedule_type = Column(String(20), nullable=True) # 'one-time' or 'recurring' - Added length constraint
+    settings_schedule_cron_expression = Column(String(100), nullable=True) # Added length constraint
     settings_schedule_run_at = Column(DateTime(timezone=True), nullable=True) # For one-time (stores target UTC time)
-    settings_schedule_timezone = Column(String, nullable=True) # User's intended timezone for CRON interpretation
+    settings_schedule_timezone = Column(String(50), nullable=True) # User's intended timezone for CRON interpretation - Added length constraint
 
     # Job run information
     next_run_at = Column(DateTime(timezone=True), nullable=True, index=True) # Calculated next run time (UTC)
@@ -73,9 +75,9 @@ class DownloadedFile(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
-    # URLs stored as strings
-    source_url = Column(String, nullable=False, index=True)
-    file_url = Column(String, nullable=False, index=True) # Not unique, same file might be found via different jobs/sources
+    # URLs stored as strings - Added length constraints (adjust if longer URLs are expected)
+    source_url = Column(String(2048), nullable=False, index=True)
+    file_url = Column(String(2048), nullable=False, index=True) # Not unique, same file might be found via different jobs/sources
 
     file_type = Column(String(50), index=True) # Store identified extension or MIME type part
     keywords_found = Column(JSONB) # List of keywords that triggered the download/interest
@@ -84,7 +86,8 @@ class DownloadedFile(Base):
     downloaded_at = Column(DateTime(timezone=True), server_default=func.now()) # Time processing finished
     date_found = Column(DateTime(timezone=True), nullable=False, server_default=func.now()) # Time initially discovered
 
-    local_path = Column(String, nullable=True) # Path on the server where the file is stored
+    # Added length constraints
+    local_path = Column(String(1024), nullable=True) # Path on the server where the file is stored
     file_size_bytes = Column(Integer, nullable=True)
     checksum_md5 = Column(String(32), nullable=True, index=True)
 
@@ -100,11 +103,14 @@ class DownloadedFile(Base):
 class User(Base):
     __tablename__ = "users"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String, unique=True, index=True, nullable=False)
+    # Added length constraint
+    email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    full_name = Column(String, nullable=True)
+    # Added length constraint
+    full_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True)
-    role = Column(String, default="user", index=True) # e.g., "user", "admin"
+    # Added length constraint
+    role = Column(String(50), default="user", index=True) # e.g., "user", "admin"
 
     # Timestamps with timezone support
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -134,3 +140,4 @@ class UserPreference(Base):
 
     def __repr__(self):
         return f"<UserPreference(user_id={self.user_id}, items_per_page={self.default_items_per_page})>"
+
