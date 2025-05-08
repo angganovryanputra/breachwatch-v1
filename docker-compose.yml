@@ -12,14 +12,33 @@ services:
       POSTGRES_DB: ${DB_NAME:-breachwatchdb}
     volumes:
       - postgres_data_local:/var/lib/postgresql/data
-    ports:
-      # You can uncomment the next line if you need to access PostgreSQL directly from your host machine
-      # - "${DB_PORT:-5432}:5432"
+    # Expose port only if needed for direct host access
+    # ports:
+    #   - "${DB_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-breachwatchuser} -d $${POSTGRES_DB:-breachwatchdb}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - breachwatch_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: breachwatch_redis
+    restart: unless-stopped
+    # Add password if REDIS_PASSWORD is set in .env (use --requirepass)
+    # command: redis-server --requirepass ${REDIS_PASSWORD} # Uncomment and set REDIS_PASSWORD in .env if needed
+    volumes:
+      - redis_data_local:/data
+    ports:
+      # Expose Redis port to host only if needed for debugging/direct access
+      # - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+        test: ["CMD", "redis-cli", "ping"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
     networks:
       - breachwatch_net
 
@@ -31,7 +50,7 @@ services:
     restart: unless-stopped
     command: uvicorn breachwatch.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
-      - ./breachwatch_backend:/app 
+      - ./breachwatch_backend:/app
     ports:
       - "8000:8000"
     env_file:
@@ -39,18 +58,32 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis: # Make backend depend on Redis being healthy
+        condition: service_healthy
     environment:
       # Ensures Python output is sent straight to terminal without being first buffered.
-      PYTHONUNBUFFERED: 1 
+      PYTHONUNBUFFERED: 1
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # The DATABASE_URL in .env should point to 'db' as host:
-      # Example: DATABASE_URL=postgresql://breachwatchuser:breachwatchpass@db:5432/breachwatchdb
+      # The DATABASE_URL in .env should point to 'db' as host
+      DATABASE_URL: postgresql://${DB_USER:-breachwatchuser}:${DB_PASSWORD:-breachwatchpass}@db:${DB_PORT:-5432}/${DB_NAME:-breachwatchdb}
+      # Point Redis connection to the 'redis' service container
+      REDIS_HOST: redis
+      REDIS_PORT: 6379 # Default Redis port inside the network
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-} # Pass password from .env if set
+      REDIS_DB: ${REDIS_DB:-0}
+      # Pass other env vars if needed, potentially SECRET_KEY, ALGORITHM, etc.
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      APP_BASE_DIR: /app # Set base directory inside container
     networks:
       - breachwatch_net
 
 volumes:
-  postgres_data_local: # Defines a named volume for data persistence
+  postgres_data_local: # Defines a named volume for DB data persistence
+  redis_data_local:    # Defines a named volume for Redis data persistence
 
 networks:
   breachwatch_net:
     driver: bridge
+
