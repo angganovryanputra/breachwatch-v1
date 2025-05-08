@@ -41,18 +41,18 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-muted/70 p-4">
-      <Card className="w-full max-w-md shadow-2xl border-border/50 bg-card/90 backdrop-blur-sm">
-        <CardHeader className="space-y-2 text-center p-8">
-           <div className="flex items-center justify-center gap-3 mb-4">
-             <ShieldAlert className="h-10 w-10 text-accent" />
+    <div className="flex min-h-screen flex-col items-center justify-center bg-muted p-4 sm:p-6 md:p-8">
+      <Card className="w-full max-w-md rounded-xl bg-card shadow-2xl">
+        <CardHeader className="space-y-1 text-center p-6">
+           <div className="flex items-center justify-center gap-2 mb-3">
+             <ShieldAlert className="h-8 w-8 text-accent" />
              <span className="text-3xl font-bold tracking-tight text-foreground">{APP_NAME}</span>
            </div>
           <CardTitle className="text-2xl font-semibold">Welcome Back</CardTitle>
           <CardDescription className="text-muted-foreground">Enter your credentials to access your account.</CardDescription>
         </CardHeader>
         <form onSubmit={handleLogin}>
-          <CardContent className="space-y-6 p-8 pt-0">
+          <CardContent className="space-y-6 p-6 pt-0">
             <div className="space-y-2">
               <Label htmlFor="email" className="text-sm font-medium">Email Address</Label>
               <Input
@@ -86,7 +86,7 @@ export default function LoginPage() {
               />
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col gap-4 p-8 pt-2">
+          <CardFooter className="flex flex-col gap-4 p-6 pt-2">
             <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
               {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
               {isLoading ? 'Signing In...' : 'Sign In'}
