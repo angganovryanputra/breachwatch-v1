@@ -7,68 +7,61 @@ import uuid
 from breachwatch.api.v1 import schemas
 from breachwatch.storage import crud, models # Import crud and models
 from breachwatch.storage.database import get_db
-# from breachwatch.api.v1.dependencies import get_current_active_user # TODO: Implement authentication
+from breachwatch.api.v1.dependencies import get_current_active_user # Import authentication dependency
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# In a real app, use authentication to get the current user
-# current_user: models.User = Depends(get_current_active_user)
+# Path prefix /users is defined in api/v1/__init__.py
 
-# For now, we'll pass user_id in the path, which is insecure without auth
-# TODO: Replace user_id path parameter with dependency injection of current_user
-
-@router.get("/{user_id}/preferences", response_model=schemas.UserPreferenceSchema)
-async def read_user_preferences(
-    user_id: uuid.UUID,
+@router.get("/me/preferences", response_model=schemas.UserPreferenceSchema)
+async def read_current_user_preferences(
+    current_user: models.User = Depends(get_current_active_user), # Inject authenticated user
     db: Session = Depends(get_db)
-    # current_user: models.User = Depends(get_current_active_user) # Use this later
 ):
     """
-    Retrieve preferences for a specific user.
-    Requires authentication in a real application.
+    Retrieve preferences for the currently authenticated user.
     """
-    # TODO: Add authorization check: if current_user.id != user_id and current_user.role != 'admin': raise HTTPException(...)
-    
-    logger.info(f"Fetching preferences for user ID: {user_id}")
+    user_id = current_user.id
+    logger.info(f"Fetching preferences for current user ID: {user_id}")
     db_preferences = crud.get_user_preferences(db=db, user_id=user_id)
     if db_preferences is None:
-        logger.warning(f"Preferences not found for user ID: {user_id}")
-        # Option 1: Return 404
-        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="User preferences not found")
-        # Option 2: Return default preferences (consider security implications)
-        # return schemas.UserPreferenceSchema(user_id=user_id, ...) # Create default response schema
-        
+        logger.warning(f"Preferences not found for user ID: {user_id}. Creating default preferences.")
+        # If preferences don't exist, create and return defaults
+        default_prefs_schema = schemas.UserPreferenceUpdateSchema() # Gets defaults
+        db_preferences = crud.update_or_create_user_preferences(
+             db=db, 
+             user_id=user_id, 
+             preferences_in=default_prefs_schema
+        )
+        if not db_preferences: # Handle potential error during default creation
+            logger.error(f"Failed to create default preferences for user {user_id}")
+            raise HTTPException(status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not retrieve or create preferences")
+
     return db_preferences
 
 
-@router.put("/{user_id}/preferences", response_model=schemas.UserPreferenceSchema)
-async def update_user_preferences(
-    user_id: uuid.UUID,
+@router.put("/me/preferences", response_model=schemas.UserPreferenceSchema)
+async def update_current_user_preferences(
     preferences_in: schemas.UserPreferenceUpdateSchema,
+    current_user: models.User = Depends(get_current_active_user), # Inject authenticated user
     db: Session = Depends(get_db)
-    # current_user: models.User = Depends(get_current_active_user) # Use this later
 ):
     """
-    Update preferences for a specific user. Creates preferences if they don't exist.
-    Requires authentication in a real application.
+    Update preferences for the currently authenticated user.
+    Creates preferences if they don't exist.
     """
-    # TODO: Add authorization check: if current_user.id != user_id: raise HTTPException(...)
-    
-    logger.info(f"Updating preferences for user ID: {user_id}")
-    
-    # Check if user exists (optional but good practice)
-    db_user = crud.get_user(db=db, user_id=user_id)
-    if db_user is None:
-        logger.warning(f"User not found when trying to update preferences: {user_id}")
-        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="User not found")
+    user_id = current_user.id
+    logger.info(f"Updating preferences for current user ID: {user_id}")
+
+    # User existence is guaranteed by get_current_active_user dependency
 
     db_preferences = crud.update_or_create_user_preferences(
-        db=db, 
-        user_id=user_id, 
+        db=db,
+        user_id=user_id,
         preferences_in=preferences_in
     )
-    
+
     if db_preferences is None: # Should not happen if user exists, but defensive check
         logger.error(f"Failed to update or create preferences for user ID: {user_id}")
         raise HTTPException(status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not save preferences")

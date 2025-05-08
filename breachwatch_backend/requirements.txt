@@ -1,17 +1,21 @@
-fastapi
-uvicorn[standard]
-pydantic
-sqlalchemy
-psycopg2-binary
-python-dotenv
-requests
-beautifulsoup4
-PyYAML
-passlib[bcrypt]
-croniter
+
+fastapi>=0.95.0 # Use a recent version
+uvicorn[standard]>=0.20.0
+pydantic>=2.0 # Required for Pydantic v2 features
+sqlalchemy>=1.4 # Use a reasonably recent version
+psycopg2-binary # PostgreSQL adapter
+python-dotenv>=0.19.0
+requests # Still useful for simple sync requests if needed, though httpx preferred
+httpx>=0.23.0 # Async HTTP client
+beautifulsoup4>=4.9.0
+PyYAML>=5.4
+passlib[bcrypt]>=1.7.4 # For password hashing
+croniter>=1.0 # For parsing CRON expressions
 zoneinfo; python_version < "3.9" # Backport for zoneinfo if needed
+tzdata # Provides timezone database often needed by zoneinfo
+python-jose[cryptography]>=3.3.0 # For JWT handling
+# cryptography is needed by jose for certain algorithms like HS256
 
 # For potential future Celery integration
-# celery
-# redis
-
+# celery>=5.0
+# redis>=4.0

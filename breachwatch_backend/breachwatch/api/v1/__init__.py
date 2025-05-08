@@ -1,9 +1,11 @@
+
 from fastapi import APIRouter
 
-from .endpoints import crawl, preferences, users # Import users endpoint
+from .endpoints import crawl, preferences, users, auth # Import auth endpoint
 
 api_router = APIRouter()
 
+api_router.include_router(auth.router, prefix="/auth", tags=["authentication"]) # Add authentication router
 api_router.include_router(crawl.router, prefix="/crawl", tags=["crawl"])
 api_router.include_router(preferences.router, prefix="/users", tags=["preferences"]) # Keep preferences under /users path for now
 api_router.include_router(users.router, prefix="/users", tags=["users"]) # Add user management router

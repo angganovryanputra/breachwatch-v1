@@ -22,67 +22,93 @@ async function apiRequest<T>(
     },
   };
 
-  if (body && (method === 'POST' || method === 'PUT' || method === 'DELETE')) { // Ensure body is only added for relevant methods
+  if (body && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
     options.body = JSON.stringify(body);
   }
 
-  console.debug(`[API Request] ${method} ${url}`, body ? `with body: ${JSON.stringify(body)}` : ''); // Log request details
+  console.debug(`[API Request] ${method} ${url}`, body ? `with body: ${JSON.stringify(body)}` : '');
 
   try {
     const response = await fetch(url, options);
 
-    console.debug(`[API Response] ${method} ${url} - Status: ${response.status}`); // Log response status
+    console.debug(`[API Response] ${method} ${url} - Status: ${response.status}`);
 
+    // Check if the response is not OK (status code outside 200-299 range)
     if (!response.ok) {
       let errorDetails = 'Unknown error';
+      let errorTitle = `API request failed: ${response.status} ${response.statusText}`;
       try {
-        // Try to parse error response as JSON, fallback to text
+        // Attempt to parse error response as JSON for more details
         const errorData = await response.json();
-        errorDetails = errorData.detail || JSON.stringify(errorData);
+        if (errorData.detail) {
+          // FastAPI often returns errors in a 'detail' field
+          errorDetails = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
+        } else {
+          errorDetails = JSON.stringify(errorData);
+        }
       } catch (e) {
+        // If parsing JSON fails, try to get the response as text
         try {
-            errorDetails = await response.text();
+          errorDetails = await response.text();
+          // Limit the length of the text details to avoid overly long messages
+          if (errorDetails.length > 300) {
+             errorDetails = errorDetails.substring(0, 300) + '...';
+          }
+           if (!errorDetails.trim()) {
+             errorDetails = 'Server returned an error with no details.';
+           }
         } catch (textError) {
-             errorDetails = 'Failed to parse error response';
+          errorDetails = 'Failed to parse error response and could not read response text.';
         }
       }
-      console.error(`API Error: ${response.status} ${response.statusText} for ${method} ${url}`, errorDetails);
-      // For 404 on GET preferences, we might want to return null instead of throwing an error.
+
+      // Log the detailed error
+      console.error(`API Error: ${response.status} ${response.statusText} for ${method} ${url}`, `Details: ${errorDetails}`);
+
+      // Specific handling for 404 on certain GET requests (e.g., preferences might not exist yet)
       if (method === 'GET' && response.status === 404 && (path.includes('/preferences') || path.startsWith('/users/'))) {
-        console.warn(`API Info: Received 404 for ${method} ${url}, returning null.`);
-        return null as T;
+        console.warn(`API Info: Received 404 for ${method} ${url}. This might be expected (e.g., resource not found). Returning null.`);
+        return null as T; // Return null as per function signature in these cases
       }
-      throw new Error(`API request failed: ${response.status} ${response.statusText}. Details: ${errorDetails}`);
-    }
-    // Check for No Content response explicitly or zero content length
-    if (response.status === 204 || response.headers.get('content-length') === '0') {
-        console.debug(`[API Response] ${method} ${url} - Status 204 or 0 length, returning null.`);
-        return null as T;
+
+      // Throw a more informative error for other failures
+      throw new Error(`${errorTitle}. Details: ${errorDetails}`);
     }
 
-    // Attempt to parse JSON response
+    // Handle successful responses with no content (e.g., 204 No Content)
+    if (response.status === 204 || response.headers.get('content-length') === '0') {
+      console.debug(`[API Response] ${method} ${url} - Status ${response.status} or 0 length, returning null.`);
+      return null as T;
+    }
+
+    // Attempt to parse successful JSON response
     try {
-        const data = await response.json();
-        console.debug(`[API Response Data] ${method} ${url}`, data); // Log successful data
-        return data as T;
+      const data = await response.json();
+      console.debug(`[API Response Data] ${method} ${url}`, data);
+      return data as T;
     } catch (jsonError) {
-        console.error(`API Error: Failed to parse JSON response from ${url}`, jsonError);
-        throw new Error(`Failed to parse JSON response from server. Status: ${response.status}`);
+      // This case means the server responded with 2xx status but the body wasn't valid JSON
+      console.error(`API Error: Failed to parse successful JSON response from ${url}. Status: ${response.status}`, jsonError);
+      throw new Error(`Server responded successfully (Status: ${response.status}) but failed to parse JSON response.`);
     }
 
   } catch (error: unknown) {
-    console.error(`Network or other error during API request to ${url}:`, error);
-    // Check if it's a fetch-related TypeError (often wraps NetworkError)
+    // Handle network errors (fetch itself failed) or errors thrown above
+    console.error(`API Request Failed: ${method} ${url}`, error);
+
+    // Specifically identify network errors (TypeError often wraps NetworkError)
     if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
-         const networkError = new Error(`Network Error: Failed to connect to the backend at ${url}. Please ensure the backend service is running and reachable.`);
-         (networkError as any).cause = error; // Preserve original error cause if possible
-         throw networkError;
+      const networkError = new Error(`Network Error: Could not connect to the backend at ${url}. Please check if the backend service is running, the URL is correct, and CORS is configured.`);
+      (networkError as any).cause = error; // Preserve original error if possible
+      throw networkError;
     }
-    // Re-throw other errors
+
+    // Re-throw other errors (including the ones we constructed above)
     if (error instanceof Error) {
-        throw error; // Re-throw known Error types
+      throw error;
     } else {
-         throw new Error(`An unexpected error occurred during the API request: ${String(error)}`); // Wrap unknown errors
+      // Wrap unknown errors
+      throw new Error(`An unexpected error occurred during the API request: ${String(error)}`);
     }
   }
 }
@@ -130,9 +156,6 @@ export const stopCrawlJob = async (jobId: string): Promise<MessageResponse> => {
 };
 
 export const deleteCrawlJob = async (jobId: string): Promise<void> => {
-  // Note: DELETE might not need a body, depending on backend implementation.
-  // If the backend requires a body for DELETE (e.g., for options), pass it.
-  // Assuming no body needed for DELETE job itself based on common practices.
   return apiRequest<void>(`/crawl/jobs/${jobId}`, 'DELETE');
 };
 
@@ -159,7 +182,6 @@ export const deleteDownloadedFileRecord = async (fileId: string, deletePhysical:
 
 // --- User Preferences Endpoints ---
 export const getUserPreferences = async (userId: string): Promise<UserPreferences | null> => {
-  // Handling 404 specifically within apiRequest now
   return apiRequest<UserPreferences | null>(`/users/${userId}/preferences`, 'GET');
 };
 
@@ -224,19 +246,23 @@ export const parseSettingsForBackend = (settings: SettingsFormData): BackendCraw
     let runAtISO: string | null = null;
     if (type === 'one-time' && runAtDate && runAtTime) {
         try {
-            // Combine date and time. Crucially, DO NOT assume local timezone here.
-            // The backend should interpret this based on the provided `timezone` field.
-            // Send the date and time components as they are, or construct an ISO string *without* timezone offset
-            // if the backend expects UTC or will handle the conversion using the timezone field.
-            // A common approach is to construct the ISO string assuming it's in the target timezone,
-            // but let the backend confirm/convert. Let's try constructing without explicit offset.
+            // Construct the ISO string using the date and time, interpreted in the specified timezone.
+            // The backend expects a timezone-aware ISO string (e.g., with offset or 'Z').
+            // Creating timezone-aware dates purely in client-side JS is tricky.
+            // A robust approach is to send date, time, and timezone separately, but the current backend schema expects ISO.
+            // We'll construct an ISO string assuming the date/time *is* in the target timezone,
+            // and let the backend handle final conversion if needed. This is slightly ambiguous.
+            // Sending as UTC ('Z') might be safer if the backend *always* expects UTC.
             const combinedDateTimeString = `${runAtDate}T${runAtTime}:00`; // Example: "2024-08-15T14:30:00"
-            // If we know the timezone, we *could* try to get an ISO string with offset, but it's complex in JS.
-            // Sending the combined string might be safer if the backend handles timezone parsing.
-            // Let's default to ISO string assuming UTC for now, but highlight backend dependency.
-            runAtISO = new Date(`${combinedDateTimeString}Z`).toISOString(); // Appends Z for UTC assumption
-            // **Important**: The backend *must* correctly interpret this, potentially using the `timezone` field
-            // to adjust if the user intended a different timezone.
+
+            // Let's try sending the date/time string and timezone separately if the backend schema allows, otherwise format to ISO UTC
+             // Assuming backend expects ISO string:
+             // Convert to Date object, assuming the input IS in the target timezone, then get UTC ISO string.
+             // This requires careful handling or a library like date-fns-tz.
+             // Simpler approach for now: Assume UTC or let backend handle with provided timezone.
+             // We'll send the combined string + timezone if backend supports, else format to ISO UTC.
+             // CURRENT BACKEND SCHEMA seems to expect ISO string for run_at. Send as UTC.
+            runAtISO = new Date(`${combinedDateTimeString}Z`).toISOString(); // Append Z assuming UTC interpretation is desired
 
         } catch (e) {
             console.error("Error constructing date from parts:", e);
@@ -250,8 +276,9 @@ export const parseSettingsForBackend = (settings: SettingsFormData): BackendCraw
     if (isValidRecurring || isValidOneTime) {
          schedule = {
             type: type,
-            cron_expression: isValidRecurring ? cronExpression : null, // Match backend field name
-            run_at: isValidOneTime ? runAtISO : null,                  // Match backend field name
+            // Use snake_case to match Python backend Pydantic schema definition
+            cron_expression: isValidRecurring ? cronExpression : null,
+            run_at: isValidOneTime ? runAtISO : null,
             timezone: timezone,
         };
     } else {
@@ -262,6 +289,7 @@ export const parseSettingsForBackend = (settings: SettingsFormData): BackendCraw
 
   return {
     keywords: parseStringList(settings.keywords),
+    // Use snake_case for backend compatibility
     file_extensions: parseFileExtensions(settings.fileExtensions),
     seed_urls: parseStringList(settings.seedUrls), // Backend expects strings
     search_dorks: parseStringList(settings.searchDorks),

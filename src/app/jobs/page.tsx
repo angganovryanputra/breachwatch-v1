@@ -8,11 +8,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { RefreshCcw, GanttChartSquare, ServerCrash, Play, Pause, StopCircle, Eye, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, XCircle, Loader2, Trash2, Files, Settings, CalendarClock, Repeat } from 'lucide-react';
+import { RefreshCcw, GanttChartSquare, ServerCrash, Play, StopCircle, Eye, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, XCircle, Loader2, Trash2, Files, Settings, CalendarClock, Repeat, LinkIcon } from 'lucide-react'; // Added LinkIcon
 import type { CrawlJob } from '@/types';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import { useToast } from "@/hooks/use-toast";
-import { getCrawlJobs, stopCrawlJob, deleteCrawlJob, manuallyRunJob } from '@/services/breachwatch-api'; 
+import { getCrawlJobs, stopCrawlJob, deleteCrawlJob, manuallyRunJob } from '@/services/breachwatch-api';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,9 +24,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Progress } from "@/components/ui/progress"; 
+import { Progress } from "@/components/ui/progress";
 import Link from 'next/link';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { useSearchParams } from 'next/navigation'; // Import useSearchParams
+
 
 const ITEMS_PER_PAGE = 10;
 
@@ -71,7 +73,7 @@ const getStatusIcon = (status: CrawlJob['status']): JSX.Element => {
 };
 
 // Helper to truncate arrays/strings for display
-const truncateList = (list: string[] | undefined, maxItems: number = 3): string => {
+const truncateList = (list: string[] | undefined | null, maxItems: number = 3): string => {
     if (!list) return 'N/A';
     if (list.length <= maxItems) return list.join(', ');
     return `${list.slice(0, maxItems).join(', ')}, +${list.length - maxItems} more`;
@@ -83,7 +85,18 @@ export default function CrawlJobsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const [highlightJobId, setHighlightJobId] = useState<string | null>(null); // State for highlighted job
   const { toast } = useToast();
+  const searchParams = useSearchParams(); // Hook to read query params
+
+  // Effect to read highlight parameter from URL
+  useEffect(() => {
+    const jobIdToHighlight = searchParams.get('highlight');
+    setHighlightJobId(jobIdToHighlight);
+    // Optional: Scroll to the highlighted job if found on the page
+    // This would require identifying the row element, potentially tricky with pagination
+  }, [searchParams]);
+
 
   const fetchData = useCallback(async () => {
     // Only set refreshing state if not initially loading
@@ -122,9 +135,10 @@ export default function CrawlJobsPage() {
         toast({ title: "Refreshing Jobs", description: "Fetching latest crawl job statuses..." });
     }
   };
-  
+
   const handleStopJob = async (jobId: string) => {
     toast({ title: "Attempting to Stop Job", description: `Sending stop signal for job ${jobId}...`});
+    setIsLoading(true); // Use main loading state or a specific state per job
     try {
       const response = await stopCrawlJob(jobId);
       toast({ title: "Stop Signal Sent", description: response.message });
@@ -136,16 +150,20 @@ export default function CrawlJobsPage() {
         description: err instanceof Error ? err.message : "Could not stop the job.",
         variant: "destructive",
       });
+    } finally {
+       setIsLoading(false);
     }
   };
 
   const handleDeleteJob = async (jobId: string) => {
     toast({ title: "Deleting Job", description: `Attempting to delete job ${jobId}...`});
+    setIsLoading(true);
     try {
       await deleteCrawlJob(jobId);
       toast({ title: "Job Deleted", description: `Job ${jobId} and its associated data have been deleted.` });
-      setJobs(prevJobs => prevJobs.filter(job => job.id !== jobId)); // Optimistic update
-      // Adjust pagination if needed
+      // Fetch data again instead of optimistic update to ensure consistency
+      fetchData();
+       // Adjust pagination if the deleted item was the last on the current page
       if (paginatedJobs.length === 1 && currentPage > 1) {
         setCurrentPage(currentPage - 1);
       }
@@ -156,11 +174,14 @@ export default function CrawlJobsPage() {
         description: err instanceof Error ? err.message : "Could not delete the job.",
         variant: "destructive",
       });
+       setIsLoading(false); // Ensure loading stops on error
     }
+    // No finally needed here as fetchData handles loading state
   };
 
   const handleRunJobNow = async (jobId: string) => {
     toast({ title: "Triggering Manual Run", description: `Attempting to run job ${jobId} now...` });
+    setIsLoading(true);
     try {
       const updatedJob = await manuallyRunJob(jobId);
       toast({ title: "Job Run Triggered", description: `Job ${updatedJob.name || jobId} added to processing queue.` });
@@ -172,7 +193,9 @@ export default function CrawlJobsPage() {
          description: err instanceof Error ? err.message : "Could not manually trigger the job run.",
          variant: "destructive",
        });
+       setIsLoading(false); // Stop loading on error
     }
+    // No finally needed here as fetchData handles loading state
   };
 
 
@@ -250,7 +273,7 @@ export default function CrawlJobsPage() {
                     <TableHead className="w-[150px]">Status</TableHead>
                     <TableHead className="text-center w-[100px]">Files Found</TableHead>
                     <TableHead className="w-[180px]">Created</TableHead>
-                    <TableHead className="w-[180px]">Last Updated</TableHead>
+                    <TableHead className="w-[180px]">Last Run</TableHead>
                     <TableHead className="w-[180px]">Next Run</TableHead>
                     <TableHead className="w-[200px]">Settings Summary</TableHead>
                     <TableHead className="text-right w-[150px]">Actions</TableHead>
@@ -258,7 +281,10 @@ export default function CrawlJobsPage() {
                 </TableHeader>
                 <TableBody>
                   {paginatedJobs.map((job) => (
-                    <TableRow key={job.id} className="hover:bg-muted/50">
+                    <TableRow
+                       key={job.id}
+                       className={`hover:bg-muted/50 ${job.id === highlightJobId ? 'bg-accent/10 ring-2 ring-accent/50' : ''}`}
+                    >
                       <TableCell className="font-medium max-w-[250px] truncate">
                         <TooltipProvider>
                           <Tooltip>
@@ -286,11 +312,12 @@ export default function CrawlJobsPage() {
                             </TooltipTrigger>
                             <TooltipContent>
                               <p>Current job status: {job.status.replace('_', ' ')}</p>
+                              <p className="text-xs text-muted-foreground">Last Updated: {formatDistanceToNow(parseISO(job.updated_at), { addSuffix: true })}</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                          {(job.status === 'running') && (
-                            <Progress value={undefined} className="h-1 w-full mt-1 bg-primary/20 animate-pulse" /> 
+                            <Progress value={undefined} className="h-1 w-full mt-1 bg-primary/20 animate-pulse" />
                          )}
                       </TableCell>
                       <TableCell className="text-center">
@@ -324,10 +351,12 @@ export default function CrawlJobsPage() {
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger>
-                                <span className="text-xs">{formatDistanceToNow(parseISO(job.updated_at), { addSuffix: true })}</span>
+                                <span className="text-xs">
+                                    {job.last_run_at ? formatDistanceToNow(parseISO(job.last_run_at), { addSuffix: true }) : 'Never'}
+                                </span>
                             </TooltipTrigger>
                             <TooltipContent>
-                                {format(parseISO(job.updated_at), 'MMM dd, yyyy HH:mm:ss')}
+                                {job.last_run_at ? format(parseISO(job.last_run_at), 'MMM dd, yyyy HH:mm:ss') : 'Not run yet'}
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -337,17 +366,18 @@ export default function CrawlJobsPage() {
                           <Tooltip>
                             <TooltipTrigger>
                                 <span className="text-xs">
-                                    {job.status === 'scheduled' && job.next_run_at 
+                                    {/* Display next run only if status is scheduled */}
+                                    {job.status === 'scheduled' && job.next_run_at
                                      ? formatDistanceToNow(parseISO(job.next_run_at), { addSuffix: true })
-                                     : job.settings.schedule ? (job.settings.schedule.type === 'recurring' ? `Recurring (${job.settings.schedule.cronExpression || 'N/A'})` : 'One-time (Completed/Run)') : 'Not Scheduled'}
+                                     : job.settings_schedule_type ? (job.settings_schedule_type === 'recurring' ? <Repeat className="inline h-3 w-3 mr-1 text-blue-500"/> : <CalendarClock className="inline h-3 w-3 mr-1 text-gray-500"/>) : 'N/A'}
                                 </span>
                             </TooltipTrigger>
                             <TooltipContent>
-                                {job.status === 'scheduled' && job.next_run_at ? `Scheduled for: ${format(parseISO(job.next_run_at), 'MMM dd, yyyy HH:mm')}` :
-                                 job.settings.schedule?.type === 'recurring' ? `Recurring schedule: ${job.settings.schedule.cronExpression}` : 
-                                 job.settings.schedule?.type === 'one-time' ? `One-time job. Last run: ${job.last_run_at ? format(parseISO(job.last_run_at), 'PPp') : 'Never'}` :
+                                {job.status === 'scheduled' && job.next_run_at ? `Scheduled for: ${format(parseISO(job.next_run_at), 'PPp')}` :
+                                 job.settings_schedule_type === 'recurring' ? `Recurring schedule: ${job.settings_schedule_cron_expression || 'N/A'}` :
+                                 job.settings_schedule_type === 'one-time' ? `One-time job (Ran: ${job.last_run_at ? formatDistanceToNow(parseISO(job.last_run_at), { addSuffix: true }) : 'Never'})` :
                                  'Job is not scheduled.'}
-                                {job.settings.schedule?.timezone && ` (${job.settings.schedule.timezone})`}
+                                {job.settings_schedule_timezone && ` (${job.settings_schedule_timezone})`}
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -359,18 +389,20 @@ export default function CrawlJobsPage() {
                                     <div className="flex items-center gap-1 text-muted-foreground cursor-default">
                                         <Settings className="h-3 w-3"/>
                                         <span>
-                                            {job.settings.keywords.length} kw, {job.settings.file_extensions.length} ext, D:{job.settings.crawl_depth}
-                                            {job.settings.schedule && <CalendarClock className="inline h-3 w-3 ml-1" />}
+                                            {job.settings_keywords?.length ?? 0} kw, {job.settings_file_extensions?.length ?? 0} ext, D:{job.settings_crawl_depth ?? '?'}
+                                            {job.settings_schedule_type && <CalendarClock className="inline h-3 w-3 ml-1" />}
                                         </span>
                                     </div>
                                 </TooltipTrigger>
-                                <TooltipContent align="start">
-                                    <p><strong>Keywords:</strong> {truncateList(job.settings.keywords)}</p>
-                                    <p><strong>Extensions:</strong> {truncateList(job.settings.file_extensions)}</p>
-                                    <p><strong>Depth:</strong> {job.settings.crawl_depth}</p>
-                                    <p><strong>Delay:</strong> {job.settings.request_delay_seconds}s</p>
-                                    {job.settings.custom_user_agent && <p><strong>User Agent:</strong> Custom</p>}
-                                    {job.settings.schedule && <p><strong>Schedule:</strong> {job.settings.schedule.type === 'recurring' ? `Recurring (${job.settings.schedule.cronExpression})` : `One-time ${job.settings.schedule.runAt ? format(parseISO(job.settings.schedule.runAt), 'PPp') : '(Date N/A)'}`}{job.settings.schedule.timezone ? ` [${job.settings.schedule.timezone}]` : ''}</p>}
+                                <TooltipContent align="start" className="max-w-xs break-words">
+                                    <p><strong>Keywords:</strong> {truncateList(job.settings_keywords)}</p>
+                                    <p><strong>Extensions:</strong> {truncateList(job.settings_file_extensions)}</p>
+                                    <p><strong>Seed URLs:</strong> {job.settings_seed_urls?.length ?? 0} URLs</p>
+                                    <p><strong>Dorks:</strong> {job.settings_search_dorks?.length ?? 0} dorks</p>
+                                    <p><strong>Depth:</strong> {job.settings_crawl_depth}</p>
+                                    <p><strong>Delay:</strong> {job.settings_request_delay_seconds}s</p>
+                                    {job.settings_custom_user_agent && <p><strong>User Agent:</strong> Custom</p>}
+                                    {job.settings_schedule_type && <p><strong>Schedule:</strong> {job.settings_schedule_type === 'recurring' ? `Recurring (${job.settings_schedule_cron_expression})` : `One-time ${job.settings_schedule_run_at ? format(parseISO(job.settings_schedule_run_at), 'PPp') : '(Date N/A)'}`}{job.settings_schedule_timezone ? ` [${job.settings_schedule_timezone}]` : ''}</p>}
                                 </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
@@ -378,12 +410,12 @@ export default function CrawlJobsPage() {
                       <TableCell className="text-right space-x-1">
                         <TooltipProvider>
                           {/* Run Now Button */}
-                          {(job.status === 'completed' || job.status === 'failed' || job.status === 'completed_empty' || job.status === 'scheduled') && (
+                          {(job.status !== 'running' && job.status !== 'pending' && job.status !== 'stopping') && ( // Can run if not currently active
                              <AlertDialog>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <AlertDialogTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="text-green-500 hover:text-green-400">
+                                      <Button variant="ghost" size="icon" className="text-green-500 hover:text-green-400" disabled={isLoading}>
                                         <Play className="h-4 w-4" />
                                       </Button>
                                     </AlertDialogTrigger>
@@ -412,7 +444,7 @@ export default function CrawlJobsPage() {
                                 <Tooltip>
                                     <TooltipTrigger asChild>
                                      <AlertDialogTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="text-orange-500 hover:text-orange-400">
+                                        <Button variant="ghost" size="icon" className="text-orange-500 hover:text-orange-400" disabled={isLoading}>
                                             <StopCircle className="h-4 w-4" />
                                         </Button>
                                       </AlertDialogTrigger>
@@ -440,7 +472,7 @@ export default function CrawlJobsPage() {
                             <Tooltip>
                                 <TooltipTrigger asChild>
                                 <AlertDialogTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/80 hover:bg-destructive/10">
+                                    <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/80 hover:bg-destructive/10" disabled={isLoading}>
                                     <Trash2 className="h-4 w-4" />
                                     </Button>
                                 </AlertDialogTrigger>
@@ -451,8 +483,8 @@ export default function CrawlJobsPage() {
                                 <AlertDialogHeader>
                                 <AlertDialogTitle>Delete Job Permanently?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                    This action will permanently delete the crawl job &quot;{job.name || job.id}&quot;, 
-                                    all its associated downloaded file records from the database, and 
+                                    This action will permanently delete the crawl job &quot;{job.name || job.id}&quot;,
+                                    all its associated downloaded file records from the database, and
                                     all physical files downloaded by this job from the server. This cannot be undone.
                                 </AlertDialogDescription>
                                 </AlertDialogHeader>
@@ -479,7 +511,7 @@ export default function CrawlJobsPage() {
               <Button
                 variant="outline"
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
+                disabled={currentPage === 1 || isLoading}
                 size="sm"
               >
                 <ChevronLeft className="mr-1 h-4 w-4" />
@@ -491,7 +523,7 @@ export default function CrawlJobsPage() {
               <Button
                 variant="outline"
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
+                disabled={currentPage === totalPages || isLoading}
                 size="sm"
               >
                 Next
