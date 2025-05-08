@@ -41,7 +41,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-muted p-4 sm:p-6 md:p-8">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4 sm:p-6 md:p-8">
       <Card className="w-full max-w-md rounded-xl bg-card shadow-2xl">
         <CardHeader className="space-y-1 text-center p-6">
            <div className="flex items-center justify-center gap-2 mb-3">
@@ -52,7 +52,7 @@ export default function LoginPage() {
           <CardDescription className="text-muted-foreground">Enter your credentials to access your account.</CardDescription>
         </CardHeader>
         <form onSubmit={handleLogin}>
-          <CardContent className="space-y-6 p-6 pt-0">
+          <CardContent className="space-y-6 p-6">
             <div className="space-y-2">
               <Label htmlFor="email" className="text-sm font-medium">Email Address</Label>
               <Input
@@ -86,7 +86,7 @@ export default function LoginPage() {
               />
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col gap-4 p-6 pt-2">
+          <CardFooter className="flex flex-col gap-4 p-6">
             <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
               {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
               {isLoading ? 'Signing In...' : 'Sign In'}
@@ -103,3 +103,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
