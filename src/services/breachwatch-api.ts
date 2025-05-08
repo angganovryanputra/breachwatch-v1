@@ -1,5 +1,5 @@
 // src/services/breachwatch-api.ts
-import type { SettingsData, DownloadedFileEntry, CrawlJob } from '@/types';
+import type { SettingsFormData, DownloadedFileEntry, CrawlJob, ScheduleData } from '@/types';
 import { NEXT_PUBLIC_BACKEND_API_URL } from '@/config/config';
 
 // Helper to construct full API URLs
@@ -51,8 +51,10 @@ export interface BackendCrawlSettings {
   respect_robots_txt: boolean;
   request_delay_seconds: number;
   use_search_engines: boolean;
-  max_results_per_dork?: number;
-  max_concurrent_requests_per_domain?: number;
+  max_results_per_dork?: number | null;
+  max_concurrent_requests_per_domain?: number | null;
+  custom_user_agent?: string | null;
+  schedule?: ScheduleData | null;
 }
 
 export interface CreateCrawlJobPayload {
@@ -96,19 +98,30 @@ export const getDownloadedFiles = async (jobId?: string, skip: number = 0, limit
 };
 
 export const deleteDownloadedFileRecord = async (fileId: string, deletePhysical: boolean = false): Promise<void> => {
-  // Backend expects `delete_physical` in the body for DELETE /results/downloaded/{file_id}
   return apiRequest<void>(`/crawl/results/downloaded/${fileId}`, 'DELETE', { delete_physical: deletePhysical });
 };
 
 
-// Helper to parse frontend settings strings into backend-compatible arrays
-export const parseSettingsForBackend = (settings: SettingsData): BackendCrawlSettings => {
+// Helper to parse frontend settings strings into backend-compatible arrays/objects
+export const parseSettingsForBackend = (settings: SettingsFormData): BackendCrawlSettings => {
   const parseStringList = (str: string | undefined, separator: RegExp = /,|\n/): string[] => {
     return str ? str.split(separator).map(s => s.trim()).filter(s => s) : [];
   };
   
   const parseFileExtensions = (str: string | undefined): string[] => {
      return str ? str.split(/,|\n/).map(s => s.trim().replace(/^\./, '')).filter(s => s) : [];
+  }
+
+  let schedule: ScheduleData | null = null;
+  if (settings.scheduleEnabled) {
+    schedule = {
+      type: settings.scheduleType,
+      cronExpression: settings.scheduleType === 'recurring' ? settings.scheduleCronExpression || null : null,
+      runAt: settings.scheduleType === 'one-time' && settings.scheduleRunAtDate && settings.scheduleRunAtTime
+        ? new Date(`${settings.scheduleRunAtDate}T${settings.scheduleRunAtTime}:00`).toISOString()
+        : null,
+      timezone: settings.scheduleTimezone || null,
+    };
   }
 
   return {
@@ -119,8 +132,10 @@ export const parseSettingsForBackend = (settings: SettingsData): BackendCrawlSet
     crawl_depth: settings.crawlDepth,
     respect_robots_txt: settings.respectRobotsTxt,
     request_delay_seconds: settings.requestDelay,
-    use_search_engines: true, 
-    max_results_per_dork: 20, 
-    max_concurrent_requests_per_domain: 2, 
+    use_search_engines: true, // Assuming this is always true from frontend for now
+    max_results_per_dork: settings.maxResultsPerDork,
+    max_concurrent_requests_per_domain: settings.maxConcurrentRequestsPerDomain,
+    custom_user_agent: settings.customUserAgent || null,
+    schedule: schedule,
   };
 };

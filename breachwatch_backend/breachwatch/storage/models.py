@@ -1,8 +1,8 @@
 import uuid
 from sqlalchemy import Column, String, DateTime, Text, Integer, Boolean, ForeignKey, JSON, Float
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB # Use JSONB for better performance with JSON in PostgreSQL
 from sqlalchemy.orm import relationship, column_property
-from sqlalchemy.sql import func, select # For server-side default timestamps and subqueries
+from sqlalchemy.sql import func, select 
 
 from .database import Base
 
@@ -11,41 +11,41 @@ class CrawlJob(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, index=True)
-    status = Column(String, default="pending", index=True) # pending, running, completed, failed, stopping, completed_empty
+    status = Column(String, default="pending", index=True) # pending, running, completed, failed, stopping, completed_empty, scheduled
     
-    settings_keywords = Column(JSON) 
-    settings_file_extensions = Column(JSON) 
-    settings_seed_urls = Column(JSON) 
-    settings_search_dorks = Column(JSON) 
+    # Crawler settings directly on the job model
+    settings_keywords = Column(JSONB) 
+    settings_file_extensions = Column(JSONB) 
+    settings_seed_urls = Column(JSONB) 
+    settings_search_dorks = Column(JSONB) 
     settings_crawl_depth = Column(Integer)
     settings_respect_robots_txt = Column(Boolean)
     settings_request_delay_seconds = Column(Float) 
     settings_use_search_engines = Column(Boolean)
     settings_max_results_per_dork = Column(Integer, nullable=True)
     settings_max_concurrent_requests_per_domain = Column(Integer, nullable=True)
+    settings_custom_user_agent = Column(String, nullable=True)
+
+    # Scheduling settings
+    settings_schedule_type = Column(String, nullable=True) # 'one-time' or 'recurring'
+    settings_schedule_cron_expression = Column(String, nullable=True)
+    settings_schedule_run_at = Column(DateTime(timezone=True), nullable=True) # For one-time
+    settings_schedule_timezone = Column(String, nullable=True)
+
+    # Job run information
+    next_run_at = Column(DateTime(timezone=True), nullable=True, index=True) # Calculated next run time for scheduled jobs
+    last_run_at = Column(DateTime(timezone=True), nullable=True, index=True) # Timestamp of the last actual run
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
     
     downloaded_files = relationship("DownloadedFile", back_populates="crawl_job", cascade="all, delete-orphan", lazy="selectin")
 
-    # This provides a way for the Pydantic schema to get the summary if the relationship is loaded.
-    # Note: This is a Python property. If you need this count in SQL queries directly,
-    # you'd use a column_property with a correlated subquery, but that's more complex and
-    # often less performant for lists than loading the relationship and counting in Python.
-    # For Pydantic `from_attributes=True`, it will try to access this property.
     @property
     def results_summary(self) -> dict:
         if hasattr(self, '_sa_instance_state') and not self._sa_instance_state.expired and 'downloaded_files' in self.__dict__:
-            # If downloaded_files relationship is loaded and not expired
              return {"files_found": len(self.downloaded_files)}
-        # Fallback if not loaded (though CRUD operations try to ensure it is)
-        # This would trigger a lazy load if not already loaded, which might be undesirable in some contexts.
-        # However, for schema serialization, it's acceptable.
-        # Or, you could return a default/empty summary if you want to avoid lazy loads strictly.
-        # For now, assume it should be loaded by the time schema needs it.
-        # If it's critical to avoid lazy load, ensure `selectinload` is always used in queries.
-        if self.downloaded_files is not None: # Check if None, not just empty list
+        if self.downloaded_files is not None: 
             return {"files_found": len(self.downloaded_files)}
         return {"files_found": 0}
 
@@ -63,7 +63,7 @@ class DownloadedFile(Base):
     file_url = Column(String, nullable=False, unique=False, index=True) 
     
     file_type = Column(String(50), index=True) 
-    keywords_found = Column(JSON) 
+    keywords_found = Column(JSONB) 
     
     downloaded_at = Column(DateTime(timezone=True), server_default=func.now())
     local_path = Column(String, nullable=True, unique=False) 
@@ -78,4 +78,14 @@ class DownloadedFile(Base):
     def __repr__(self):
         return f"<DownloadedFile(id={self.id}, file_url='{self.file_url}', type='{self.file_type}')>"
 
-```
+# TODO: Add User and Role models for authentication and RBAC later
+# class User(Base):
+#     __tablename__ = "users"
+#     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+#     email = Column(String, unique=True, index=True, nullable=False)
+#     hashed_password = Column(String, nullable=False)
+#     full_name = Column(String, nullable=True)
+#     is_active = Column(Boolean, default=True)
+#     role = Column(String, default="user") # e.g., "user", "admin"
+#     created_at = Column(DateTime(timezone=True), server_default=func.now())
+#     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())

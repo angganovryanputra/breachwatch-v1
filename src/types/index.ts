@@ -1,4 +1,3 @@
-
 import type { LucideIcon } from 'lucide-react';
 
 // Corresponds to backend's DownloadedFileSchema
@@ -16,6 +15,23 @@ export interface DownloadedFileEntry {
   checksum_md5?: string | null;
 }
 
+export type UserRole = 'user' | 'admin';
+
+export interface User {
+  id: string;
+  name?: string | null;
+  email: string;
+  role: UserRole;
+  avatarUrl?: string | null; // Optional: for displaying user avatar
+}
+
+export interface ScheduleData {
+  type: 'one-time' | 'recurring';
+  cronExpression?: string | null; // For recurring jobs, e.g., "0 0 * * *" for daily at midnight
+  runAt?: string | null; // ISO string for one-time jobs
+  timezone?: string | null; // e.g., "Asia/Jakarta"
+}
+
 // Corresponds to backend's CrawlSettingsSchema (used as part of CrawlJob)
 export interface CrawlSettings {
   keywords: string[];
@@ -28,20 +44,24 @@ export interface CrawlSettings {
   use_search_engines: boolean;
   max_results_per_dork?: number | null;
   max_concurrent_requests_per_domain?: number | null;
+  custom_user_agent?: string | null;
+  schedule?: ScheduleData | null; // Added for job scheduling
 }
 
 // Corresponds to backend's CrawlJobSchema
 export interface CrawlJob {
   id: string; // uuid.UUID
   name?: string | null;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'stopping' | 'completed_empty';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'stopping' | 'completed_empty' | 'scheduled';
   created_at: string; // datetime (ISO string)
   updated_at: string; // datetime (ISO string)
   settings: CrawlSettings; 
-  results_summary?: { // Added to match backend schema
+  results_summary?: {
     files_found?: number;
-    // other summary fields can be added here
   } | null;
+  // Optional fields for scheduled jobs, populated by backend based on settings.schedule
+  next_run_at?: string | null; // datetime (ISO string)
+  last_run_at?: string | null; // datetime (ISO string)
 }
 
 
@@ -51,10 +71,11 @@ export interface NavItem {
   icon: LucideIcon;
   label?: string;
   disabled?: boolean;
+  adminOnly?: boolean; // For conditional rendering based on user role
 }
 
-// This is the frontend form data structure
-export interface SettingsData {
+// This is the frontend form data structure for settings
+export interface SettingsFormData {
   keywords: string; // Comma/newline separated
   fileExtensions: string; // Comma/newline separated
   seedUrls: string; // Newline separated
@@ -62,5 +83,14 @@ export interface SettingsData {
   crawlDepth: number;
   respectRobotsTxt: boolean;
   requestDelay: number; // in seconds
+  customUserAgent: string; // Optional custom user agent
+  maxResultsPerDork: number;
+  maxConcurrentRequestsPerDomain: number;
+  // Scheduling fields
+  scheduleEnabled: boolean;
+  scheduleType: 'one-time' | 'recurring';
+  scheduleCronExpression: string; // For recurring
+  scheduleRunAtDate: string; // For one-time date part
+  scheduleRunAtTime: string; // For one-time time part
+  scheduleTimezone: string;
 }
-```

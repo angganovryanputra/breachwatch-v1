@@ -2,7 +2,8 @@ import type {Metadata} from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
-import { SidebarProvider } from '@/components/ui/sidebar'; // Import SidebarProvider
+import { SidebarProvider } from '@/components/ui/sidebar';
+import { AuthProvider } from '@/context/auth-context'; // Import AuthProvider
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -27,10 +28,12 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <SidebarProvider defaultOpen> {/* Wrap content with SidebarProvider */}
-          {children}
-          <Toaster />
-        </SidebarProvider>
+        <AuthProvider> {/* Wrap with AuthProvider */}
+          <SidebarProvider defaultOpen> 
+            {children}
+            <Toaster />
+          </SidebarProvider>
+        </AuthProvider>
       </body>
     </html>
   );
