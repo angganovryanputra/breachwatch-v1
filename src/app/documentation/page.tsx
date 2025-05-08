@@ -95,9 +95,11 @@ export default function DocumentationPage() {
                   <li><strong>Crawl Depth:</strong> How many links deep the crawler should follow from the seed URLs or dork results.</li>
                   <li><strong>Other Parameters:</strong> Such as request delays and whether to respect `robots.txt`.</li>
                 </ul>
-                <p className="text-muted-foreground pl-8 mt-1">
-                  <Badge variant="outline" className="border-accent text-accent">Important:</Badge> Saving these settings initiates a new crawl job on the backend.
-                </p>
+                {/* Replaced p tag with div to avoid nesting div (from Badge) inside p */}
+                <div className="text-muted-foreground pl-8 mt-1">
+                  <Badge variant="outline" className="border-accent text-accent mr-1">Important:</Badge>
+                  <span>Saving these settings initiates a new crawl job on the backend.</span>
+                </div>
               </div>
 
               <Separator />
@@ -159,9 +161,11 @@ export default function DocumentationPage() {
                   </li>
                   <li><strong>Job Completion:</strong> Once all URLs in the queue are processed, the job status is updated to "completed" (or "completed_empty" if no files were found, or "failed" if an error occurred).</li>
                 </ul>
-                 <p className="text-muted-foreground pl-8 mt-1">
-                  <Badge variant="outline" className="border-accent text-accent">Note:</Badge> The "deep crawler" functionality involves recursively following links found on pages, fetching content from those links, and repeating the identification and analysis process.
-                </p>
+                 {/* Replaced p tag with div to avoid nesting div (from Badge) inside p */}
+                 <div className="text-muted-foreground pl-8 mt-1">
+                    <Badge variant="outline" className="border-accent text-accent mr-1">Note:</Badge>
+                    <span>The "deep crawler" functionality involves recursively following links found on pages, fetching content from those links, and repeating the identification and analysis process.</span>
+                 </div>
               </div>
               
               <Separator />
@@ -215,6 +219,12 @@ export default function DocumentationPage() {
                     <li>A foreign key linking it back to the `CrawlJob` that found it.</li>
                   </ul>
                 </li>
+                <li>
+                  <strong>User:</strong> Represents a user account with authentication details and roles.
+                </li>
+                 <li>
+                  <strong>UserPreference:</strong> Stores user-specific settings like default items per page or notification preferences.
+                </li>
               </ul>
             </CardContent>
           </Card>
@@ -262,19 +272,14 @@ export default function DocumentationPage() {
                 BreachWatch is an evolving tool. Potential future enhancements include:
               </p>
               <ul className="list-disc list-inside text-muted-foreground ml-4 space-y-1">
-                <li>User authentication and authorization.</li>
-                <li>Scheduled and recurring crawl jobs.</li>
                 <li>Advanced content analysis using NLP/AI for PII detection and risk scoring.</li>
                 <li>Direct file preview within the application (for safe file types).</li>
                 <li>Automated reporting features.</li>
                 <li>Enhanced notification system.</li>
                 <li>Integration with proxy/VPN services for crawling.</li>
-                <li>More robust error handling and retry mechanisms for crawling.</li>
-                <li>A dedicated "Crawl Jobs" management page in the UI.</li>
+                 <li>Integration with database for user management and persistent storage.</li>
+                 <li>More comprehensive testing suite.</li>
               </ul>
-              <p className="text-muted-foreground mt-2">
-                Refer to the "Rekomendasi Pengembangan" section on the <Link href="/guidelines" className="text-accent hover:underline">Ethical Guidelines</Link> page for more ideas.
-              </p>
             </CardContent>
           </Card>
 
@@ -286,5 +291,6 @@ export default function DocumentationPage() {
     </AppShell>
   );
 }
-
     
+
+      
