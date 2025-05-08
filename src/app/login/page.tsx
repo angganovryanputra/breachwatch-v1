@@ -1,23 +1,23 @@
+
 'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/auth-context'; // Assuming AuthContext exists
+import { useAuth } from '@/context/auth-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
-import { LogIn, Loader2 } from 'lucide-react';
-import { ShieldAlert } from 'lucide-react'; // For logo
-import { APP_NAME } from '@/lib/constants'; // For App Name
+import { LogIn, Loader2, ShieldAlert } from 'lucide-react';
+import { APP_NAME } from '@/lib/constants';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth(); // Use login function from context
+  const { login } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -26,10 +26,9 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // Simulate API call for dummy login
       await login(email, password);
       toast({ title: 'Login Successful', description: 'Redirecting to dashboard...' });
-      router.push('/dashboard'); // Redirect after successful login
+      router.push('/dashboard');
     } catch (error) {
       console.error('Login failed:', error);
       toast({
@@ -39,56 +38,63 @@ export default function LoginPage() {
       });
       setIsLoading(false);
     }
-    // No finally block needed here as redirect happens on success
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md shadow-xl">
-        <CardHeader className="space-y-1 text-center">
-           <div className="flex items-center justify-center gap-2 mb-4">
-             <ShieldAlert className="h-8 w-8 text-accent" />
-             <span className="text-2xl font-semibold text-foreground">{APP_NAME}</span>
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-muted/70 p-4">
+      <Card className="w-full max-w-md shadow-2xl border-border/50 bg-card/90 backdrop-blur-sm">
+        <CardHeader className="space-y-2 text-center p-8">
+           <div className="flex items-center justify-center gap-3 mb-4">
+             <ShieldAlert className="h-10 w-10 text-accent" />
+             <span className="text-3xl font-bold tracking-tight text-foreground">{APP_NAME}</span>
            </div>
-          <CardTitle className="text-2xl">Login</CardTitle>
-          <CardDescription>Enter your credentials to access your account</CardDescription>
+          <CardTitle className="text-2xl font-semibold">Welcome Back</CardTitle>
+          <CardDescription className="text-muted-foreground">Enter your credentials to access your account.</CardDescription>
         </CardHeader>
         <form onSubmit={handleLogin}>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6 p-8 pt-0">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" className="text-sm font-medium">Email Address</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="user@example.com"
+                placeholder="e.g., user@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 disabled={isLoading}
+                className="h-11 text-base"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password" className="text-sm font-medium">Password</Label>
+                {/* Add forgot password link if needed later */}
+                {/* <Link href="/forgot-password" passHref>
+                  <a className="text-sm text-accent hover:underline">Forgot password?</a>
+                </Link> */}
+              </div>
               <Input
                 id="password"
                 type="password"
-                placeholder="********"
+                placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 disabled={isLoading}
+                className="h-11 text-base"
               />
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col gap-4">
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
-              {isLoading ? 'Logging in...' : 'Login'}
+          <CardFooter className="flex flex-col gap-4 p-8 pt-2">
+            <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
+              {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
+              {isLoading ? 'Signing In...' : 'Sign In'}
             </Button>
              <p className="text-center text-sm text-muted-foreground">
-              Don&apos;t have an account?{' '}
-              <Link href="/signup" className="font-medium text-accent hover:underline">
-                Sign up
+              Don&apos;t have an account yet?{' '}
+              <Link href="/signup" className="font-semibold text-accent hover:underline">
+                Create one
               </Link>
             </p>
           </CardFooter>

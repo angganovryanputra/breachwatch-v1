@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
@@ -15,9 +16,12 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Dummy user data for simulation
+// For testing:
+// Regular User: user@example.com / password
+// Admin User: admin@example.com / password
 const DUMMY_USERS: User[] = [
-  { id: 'user-1', email: 'user@example.com', name: 'Regular User', role: 'user' },
-  { id: 'admin-1', email: 'admin@example.com', name: 'Admin User', role: 'admin' },
+  { id: 'user-1', email: 'user@example.com', name: 'Regular User', role: 'user', avatarUrl: 'https://picsum.photos/seed/user1/50/50' },
+  { id: 'admin-1', email: 'admin@example.com', name: 'Admin User', role: 'admin', avatarUrl: 'https://picsum.photos/seed/admin1/50/50' },
 ];
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
