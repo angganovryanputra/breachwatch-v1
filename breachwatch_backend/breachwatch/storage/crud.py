@@ -1,6 +1,7 @@
 import logging
-from sqlalchemy.orm import Session
-from typing import List, Optional
+from sqlalchemy.orm import Session, selectinload, joinedload
+from sqlalchemy import func
+from typing import List, Optional, Tuple
 import uuid
 from datetime import datetime
 
@@ -12,10 +13,38 @@ logger = logging.getLogger(__name__)
 # --- CrawlJob CRUD ---
 
 def get_crawl_job(db: Session, job_id: uuid.UUID) -> Optional[models.CrawlJob]:
-    return db.query(models.CrawlJob).filter(models.CrawlJob.id == job_id).first()
+    """Fetches a single crawl job, eagerly loading its downloaded_files for summary."""
+    job = db.query(models.CrawlJob).options(
+        selectinload(models.CrawlJob.downloaded_files)
+    ).filter(models.CrawlJob.id == job_id).first()
+    
+    if job:
+        # Populate results_summary (Pydantic schema will use this if field exists)
+        # This is more for direct model manipulation; Pydantic schema can do this too.
+        # For schemas.CrawlJobSchema, if `results_summary` is a field,
+        # and `from_attributes = True`, it will try to access `job.results_summary`.
+        # We can prepare it here or let the schema handle it via a property/validator if needed.
+        # The current CrawlJobSchema expects results_summary to be populated.
+        # We'll rely on the relationship being loaded and Pydantic accessing `job.downloaded_files`.
+        # The schema needs to compute this, or we add a property to the model.
+        # For simplicity, we let Pydantic schema do the count:
+        # job.results_summary = {"files_found": len(job.downloaded_files)}
+        pass # Pydantic schema will derive it from loaded downloaded_files if set up to do so
+
+    return job
+
 
 def get_crawl_jobs(db: Session, skip: int = 0, limit: int = 100) -> List[models.CrawlJob]:
-    return db.query(models.CrawlJob).order_by(models.CrawlJob.created_at.desc()).offset(skip).limit(limit).all()
+    """Fetches a list of crawl jobs, eagerly loading downloaded_files for summary."""
+    jobs = db.query(models.CrawlJob).options(
+        selectinload(models.CrawlJob.downloaded_files)  # Eagerly load for summaries
+    ).order_by(models.CrawlJob.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # for job in jobs:
+    # Pydantic schema will derive it from loaded downloaded_files.
+    # job.results_summary = {"files_found": len(job.downloaded_files)}
+    return jobs
+
 
 def create_crawl_job(db: Session, crawl_job_in: schemas.CrawlJobCreateSchema) -> models.CrawlJob:
     db_crawl_job = models.CrawlJob(
@@ -34,29 +63,42 @@ def create_crawl_job(db: Session, crawl_job_in: schemas.CrawlJobCreateSchema) ->
     )
     db.add(db_crawl_job)
     db.commit()
-    db.refresh(db_crawl_job)
+    db.refresh(db_crawl_job) # Refresh to get DB defaults like ID, created_at
+    # Load downloaded_files for consistency, though it will be empty for a new job
+    db.refresh(db_crawl_job, attribute_names=['downloaded_files'])
     logger.info(f"CrawlJob created in DB: ID {db_crawl_job.id}, Name: {db_crawl_job.name}")
     return db_crawl_job
 
 def update_crawl_job_status(db: Session, job_id: uuid.UUID, status: str) -> Optional[models.CrawlJob]:
-    db_crawl_job = get_crawl_job(db, job_id)
+    db_crawl_job = get_crawl_job(db, job_id) # This will load downloaded_files
     if db_crawl_job:
         db_crawl_job.status = status
-        db_crawl_job.updated_at = datetime.utcnow() # Manually update if onupdate not working as expected or not set
+        db_crawl_job.updated_at = datetime.utcnow() 
         db.commit()
         db.refresh(db_crawl_job)
+        db.refresh(db_crawl_job, attribute_names=['downloaded_files']) # Ensure relationship is fresh for schema
         logger.info(f"CrawlJob {job_id} status updated to: {status}")
     return db_crawl_job
 
-def delete_crawl_job(db: Session, job_id: uuid.UUID) -> Optional[models.CrawlJob]:
-    db_crawl_job = get_crawl_job(db, job_id)
+def delete_crawl_job_and_get_file_paths(db: Session, job_id: uuid.UUID) -> Tuple[Optional[models.CrawlJob], List[str]]:
+    """Deletes a crawl job and its associated DownloadedFile records.
+    Returns the deleted job object (or None) and a list of local_paths of its files."""
+    db_crawl_job = db.query(models.CrawlJob).options(
+        # Load only local_path from downloaded_files for efficiency
+        selectinload(models.CrawlJob.downloaded_files).load_only(models.DownloadedFile.local_path)
+    ).filter(models.CrawlJob.id == job_id).first()
+
     if db_crawl_job:
-        # Consider what to do with associated DownloadedFile records (cascade delete, nullify FK, or disallow)
-        # For now, direct delete. Add cascade options in model relationships if needed.
+        local_file_paths = [
+            file.local_path for file in db_crawl_job.downloaded_files if file.local_path
+        ]
+        
+        # Deletion of DownloadedFile records is handled by cascade delete due to relationship setting.
         db.delete(db_crawl_job)
         db.commit()
-        logger.info(f"CrawlJob {job_id} deleted.")
-    return db_crawl_job
+        logger.info(f"CrawlJob {job_id} and its DB file records deleted.")
+        return db_crawl_job, local_file_paths
+    return None, []
 
 
 # --- DownloadedFile CRUD ---
@@ -72,7 +114,7 @@ def get_downloaded_files_by_job(db: Session, job_id: uuid.UUID, skip: int = 0, l
 
 def create_downloaded_file(db: Session, downloaded_file: schemas.DownloadedFileSchema) -> models.DownloadedFile:
     db_downloaded_file = models.DownloadedFile(
-        id=downloaded_file.id, # Use ID from schema if provided (e.g. from downloader)
+        id=downloaded_file.id, 
         source_url=str(downloaded_file.source_url),
         file_url=str(downloaded_file.file_url),
         file_type=downloaded_file.file_type,
@@ -82,7 +124,7 @@ def create_downloaded_file(db: Session, downloaded_file: schemas.DownloadedFileS
         file_size_bytes=downloaded_file.file_size_bytes,
         checksum_md5=downloaded_file.checksum_md5,
         crawl_job_id=downloaded_file.crawl_job_id,
-        date_found=downloaded_file.date_found # When it was first identified
+        date_found=downloaded_file.date_found 
     )
     db.add(db_downloaded_file)
     db.commit()
@@ -93,9 +135,9 @@ def create_downloaded_file(db: Session, downloaded_file: schemas.DownloadedFileS
 def delete_downloaded_file(db: Session, file_id: uuid.UUID) -> Optional[models.DownloadedFile]:
     db_file = get_downloaded_file(db, file_id)
     if db_file:
-        # Note: This only deletes the DB record. The actual file on disk is not deleted here.
-        # File deletion logic should be handled separately if required.
         db.delete(db_file)
         db.commit()
         logger.info(f"DownloadedFile record {file_id} deleted from DB.")
     return db_file
+
+```

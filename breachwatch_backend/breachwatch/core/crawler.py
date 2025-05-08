@@ -68,6 +68,7 @@ class MasterCrawler:
         self.domain_limiters: Dict[str, DomainLimiter] = {}
         self.user_agent = config_settings.DEFAULT_USER_AGENT
         self.request_timeout = config_settings.REQUEST_TIMEOUT
+        self._should_stop_event = asyncio.Event() # Event to signal graceful shutdown
         
         limits = httpx.Limits(max_keepalive_connections=20, max_connections=100) # General client limits
         self.http_client = httpx.AsyncClient(
@@ -81,33 +82,48 @@ class MasterCrawler:
         logger.info(f"Crawl Depth: {self.settings.crawl_depth}, Dorks: {len(self.settings.search_dorks)}")
         logger.info(f"Request Delay: {self.settings.request_delay_seconds}s, Max Concurrent per Domain: {self.settings.max_concurrent_requests_per_domain}")
 
+    async def _check_if_stopped(self):
+        """Checks if the stop signal has been received or job status is 'stopping'."""
+        if self._should_stop_event.is_set():
+            return True
+        
+        # Periodically check DB status for external stop requests
+        # This is a simplified polling mechanism.
+        # A more robust solution might involve a message queue or direct event passing if not using BackgroundTasks.
+        # For BackgroundTasks, DB polling is a common way.
+        # Check every few iterations or time period to avoid excessive DB queries.
+        # This check is currently infrequent in the main loop.
+        # TODO: Make this check more frequent or use a better signaling mechanism.
+        job = crud.get_crawl_job(self.db, self.job_id)
+        if job and job.status == "stopping":
+            self._should_stop_event.set()
+            logger.info(f"Job {self.job_id} stop signal received via DB status 'stopping'.")
+            return True
+        return False
+
+    async def stop_crawler(self):
+        """Signals the crawler to stop gracefully."""
+        logger.info(f"MasterCrawler for job {self.job_id} received stop signal.")
+        self._should_stop_event.set()
+        # Also update status in DB to 'stopping' so it's visible externally
+        # and can be picked up by _check_if_stopped if event propagation is slow/missed.
+        crud.update_crawl_job_status(db=self.db, job_id=self.job_id, status="stopping")
+
 
     async def _get_domain_limiter(self, url: str) -> DomainLimiter:
         domain = urlparse(url).netloc
-        if not domain: # Should not happen for valid http/https URLs
+        if not domain: 
             logger.warning(f"Could not parse domain from URL: {url}. Using default limiter.")
             domain = "__default__"
 
         if domain not in self.domain_limiters:
             self.domain_limiters[domain] = DomainLimiter(
                 delay_seconds=self.settings.request_delay_seconds,
-                max_concurrent=self.settings.max_concurrent_requests_per_domain or 2 # Fallback if not set
+                max_concurrent=self.settings.max_concurrent_requests_per_domain or 2 
             )
         return self.domain_limiters[domain]
 
-    async def fetch_page_content(self, url: str) -> Optional[Tuple[bytes, str]]: # Return bytes
-        """Fetches page content and content type, respecting robots.txt and politeness. Returns (content_bytes, content_type_header)"""
-        # Visited check is now at the start of process_url
-        # if url in self.visited_urls:
-        #     logger.debug(f"URL already visited (fetch_page_content): {url}")
-        #     return None
-        # self.visited_urls.add(url) # Added in process_url
-
-        # TODO: Implement actual robots.txt checking more thoroughly if self.settings.respect_robots_txt.
-        # This would involve fetching /robots.txt for the domain and parsing it.
-        # For now, we assume allowed if respect_robots_txt is True, which isn't strictly correct.
-        # A library like `reppy` or `robotexclusionrulesparser` could be used.
-        
+    async def fetch_page_content(self, url: str) -> Optional[Tuple[bytes, str]]: 
         limiter = await self._get_domain_limiter(url)
         await limiter.acquire()
         try:
@@ -116,7 +132,7 @@ class MasterCrawler:
             response.raise_for_status() 
             
             content_type = response.headers.get("content-type", "").lower()
-            content_bytes = await response.aread() # Read full content as bytes
+            content_bytes = await response.aread() 
             
             logger.debug(f"Fetched {url}, Status: {response.status_code}, Content-Type: {content_type}, Size: {len(content_bytes)} bytes")
             return content_bytes, content_type
@@ -134,14 +150,10 @@ class MasterCrawler:
             await limiter.release()
 
     async def process_url(self, url: str, current_depth: int) -> AsyncGenerator[schemas.DownloadedFileSchema, None]:
-        """
-        Processes a single URL:
-        1. Fetches content.
-        2. Identifies if it's a target file or HTML page.
-        3. If file: checks keywords, downloads, records.
-        4. If HTML: extracts links, checks for keywords in links/page, continues crawl if depth allows.
-        Yields DownloadedFileSchema for each potential breach found and downloaded.
-        """
+        if await self._check_if_stopped():
+            logger.info(f"Stopping URL processing for {url} due to stop signal.")
+            return
+
         if url in self.visited_urls:
             logger.debug(f"URL already visited: {url}, skipping.")
             return
@@ -158,29 +170,23 @@ class MasterCrawler:
             return
         
         raw_content_bytes, content_type_header = content_data_tuple
-
-        file_meta = file_identifier.identify_file_type_and_name(url, content_type_header, raw_content_bytes[:1024]) # Pass first KB for magic
-        
+        file_meta = file_identifier.identify_file_type_and_name(url, content_type_header, raw_content_bytes[:1024]) 
         is_target_file_extension = file_meta.extension.lower() in [ext.lstrip('.').lower() for ext in self.settings.file_extensions]
 
         if is_target_file_extension:
             logger.info(f"Target file type '{file_meta.extension}' identified: {url}")
-            
             keywords_in_filename_or_metadata = keyword_matcher.match_keywords_in_text(file_meta.name, self.settings.keywords)
-            # TODO: Advanced content-based keyword matching for text-based files can be added here.
-            # For now, download is triggered by filename/metadata keywords.
             
             if keywords_in_filename_or_metadata:
                 logger.info(f"Keywords {keywords_in_filename_or_metadata} found in/for file: {url}. Proceeding to download.")
                 try:
-                    # Using the passed http_client for the downloader as well
                     download_result_schema = await downloader.download_and_store_file(
                         self.http_client,
                         url,
-                        file_meta, # Pass full FileMetadata
+                        file_meta, 
                         self.job_id,
-                        list(keywords_in_filename_or_metadata), # Pass keywords that triggered
-                        raw_content_bytes if len(raw_content_bytes) < (5 * 1024 * 1024) else None # Pass content if small, for efficiency
+                        list(keywords_in_filename_or_metadata), 
+                        raw_content_bytes if len(raw_content_bytes) < (5 * 1024 * 1024) else None 
                     )
                     if download_result_schema:
                         db_downloaded_file = crud.create_downloaded_file(db=self.db, downloaded_file=download_result_schema)
@@ -189,25 +195,20 @@ class MasterCrawler:
                 except Exception as e:
                     logger.error(f"Failed to download or record file {url}: {e}", exc_info=True)
         
-        # If HTML content, extract links and continue crawl, regardless of whether it was also a "target file" (e.g. .html in extensions)
-        # This allows crawling HTML files that might also be listed as downloadable targets.
         if "text/html" in content_type_header:
+            if await self._check_if_stopped(): # Check again before expensive parsing/link extraction
+                logger.info(f"Stopping HTML processing for {url} due to stop signal.")
+                return
             try:
                 html_content_str = raw_content_bytes.decode('utf-8', errors='replace')
             except UnicodeDecodeError:
                 logger.warning(f"Could not decode HTML content from {url} as UTF-8.")
-                # Attempt fallback decoding if critical, or just return
                 try:
                     html_content_str = raw_content_bytes.decode('latin-1', errors='replace')
                     logger.info(f"Successfully decoded HTML from {url} using latin-1 fallback.")
                 except UnicodeDecodeError:
                     logger.error(f"Failed to decode HTML content from {url} with UTF-8 and latin-1.")
-                    return # Cannot process further without decodable HTML
-
-            # Optional: Check for keywords in page text/metadata
-            # soup = BeautifulSoup(html_content_str, 'html.parser')
-            # page_text_for_keywords = soup.title.string if soup.title else ""
-            # ... (keyword matching logic for page content)
+                    return 
 
             if current_depth < self.settings.crawl_depth:
                 links_on_page = recursive.extract_links_from_html(html_content_str, url)
@@ -215,50 +216,57 @@ class MasterCrawler:
                 
                 sub_tasks = []
                 for link_url in links_on_page:
-                    # The visited_urls check at the start of process_url will handle duplicates
+                    if await self._check_if_stopped(): break # Break from adding more tasks
                     sub_tasks.append(self.process_url(link_url, current_depth + 1))
                 
-                # Process sub-links and yield their findings
+                if await self._check_if_stopped(): return
+
                 for completed_task_gen in asyncio.as_completed(sub_tasks):
+                    if await self._check_if_stopped(): break
                     try:
                         async for found_file_schema in await completed_task_gen:
+                            if await self._check_if_stopped(): break
                             yield found_file_schema
                     except Exception as e_inner:
                         logger.error(f"Error processing a sub-link generator from {url}: {e_inner}", exc_info=True)
 
     async def _run_generator_and_put_to_queue(self, generator: AsyncGenerator, queue: asyncio.Queue):
-        """Helper to run an async generator and put its items into an asyncio.Queue."""
         try:
             async for item in generator:
+                if await self._check_if_stopped(): break
                 await queue.put(item)
         except Exception as e:
             logger.error(f"Error in sub-generator task: {e}", exc_info=True)
-            # Optionally put an error marker or specific error object in the queue
-            # await queue.put(e) 
         finally:
-            pass # The generator is exhausted or errored
+            pass 
 
     async def start_crawling(self) -> AsyncGenerator[schemas.DownloadedFileSchema, None]:
+        if await self._check_if_stopped(): # Initial check if already stopped
+            logger.info(f"Crawl job {self.job_id} is already in stopping state. Not starting.")
+            await self.http_client.aclose()
+            return
+
         crud.update_crawl_job_status(db=self.db, job_id=self.job_id, status="running")
         logger.info(f"Starting deep crawl for job {self.job_id}")
 
         initial_urls_to_process: Set[str] = set()
 
-        # 1. Collect Seed URLs
         for seed_url_obj in self.settings.seed_urls:
+            if await self._check_if_stopped(): break
             seed_url_str = str(seed_url_obj)
-            if seed_url_str not in self.visited_urls: # Basic initial check
+            if seed_url_str not in self.visited_urls: 
                 initial_urls_to_process.add(seed_url_str)
             else:
-                logger.debug(f"Seed URL {seed_url_str} already in initial visited set, skipping as a direct start point.")
+                logger.debug(f"Seed URL {seed_url_str} already in initial visited set, skipping.")
         logger.info(f"Collected {len(initial_urls_to_process)} unique seed URLs.")
 
-
-        # 2. Collect URLs from Search Engine Dorks concurrently
-        if self.settings.use_search_engines and self.settings.search_dorks:
+        if await self._check_if_stopped():
+             logger.info(f"Stopping before search engine dorks for job {self.job_id}.")
+        elif self.settings.use_search_engines and self.settings.search_dorks:
             logger.info(f"Executing {len(self.settings.search_dorks)} search dorks...")
             dork_fetch_tasks = []
             for dork in self.settings.search_dorks:
+                if await self._check_if_stopped(): break
                 dork_fetch_tasks.append(
                     search_engine_driver.execute_dork(
                         dork, 
@@ -267,82 +275,98 @@ class MasterCrawler:
                     )
                 )
             
-            dork_results_urls_temp: List[List[str]] = await asyncio.gather(*[self._collect_async_gen(gen) for gen in dork_fetch_tasks], return_exceptions=True)
-
-            for i, dork_url_list_or_exc in enumerate(dork_results_urls_temp):
-                dork_query = self.settings.search_dorks[i]
-                if isinstance(dork_url_list_or_exc, Exception):
-                    logger.error(f"Error executing dork '{dork_query}': {dork_url_list_or_exc}")
-                    continue
-                
-                added_from_dork = 0
-                for dork_url in dork_url_list_or_exc:
-                    if dork_url not in self.visited_urls and dork_url not in initial_urls_to_process:
-                        initial_urls_to_process.add(dork_url)
-                        added_from_dork +=1
-                logger.info(f"Dork '{dork_query}' yielded {len(dork_url_list_or_exc)} URLs, {added_from_dork} new added to process queue.")
+            if not await self._check_if_stopped():
+                dork_results_urls_temp: List[List[str]] = await asyncio.gather(*[self._collect_async_gen(gen) for gen in dork_fetch_tasks], return_exceptions=True)
+                for i, dork_url_list_or_exc in enumerate(dork_results_urls_temp):
+                    if await self._check_if_stopped(): break
+                    dork_query = self.settings.search_dorks[i]
+                    if isinstance(dork_url_list_or_exc, Exception):
+                        logger.error(f"Error executing dork '{dork_query}': {dork_url_list_or_exc}")
+                        continue
+                    added_from_dork = 0
+                    for dork_url in dork_url_list_or_exc:
+                        if dork_url not in self.visited_urls and dork_url not in initial_urls_to_process:
+                            initial_urls_to_process.add(dork_url)
+                            added_from_dork +=1
+                    logger.info(f"Dork '{dork_query}' yielded {len(dork_url_list_or_exc)} URLs, {added_from_dork} new added to process queue.")
         
         logger.info(f"Total unique initial URLs to process (seeds + dorks): {len(initial_urls_to_process)}")
 
-        if not initial_urls_to_process:
+        if not initial_urls_to_process and not await self._check_if_stopped():
             logger.warning(f"No initial URLs to process for job {self.job_id}. Crawl will stop.")
-            crud.update_crawl_job_status(db=self.db, job_id=self.job_id, status="completed_empty") # Or a new status
+            crud.update_crawl_job_status(db=self.db, job_id=self.job_id, status="completed_empty") 
             await self.http_client.aclose()
             return
 
-        # 3. Start processing initial URLs
-        # Create a queue to hold results from all concurrent process_url calls
-        results_queue = asyncio.Queue()
+        if await self._check_if_stopped():
+            logger.info(f"Stopping before processing initial URLs for job {self.job_id}.")
+        else:
+            results_queue = asyncio.Queue()
+            active_tasks_count = 0
+            
+            async def task_wrapper(url: str, queue: asyncio.Queue, depth: int):
+                nonlocal active_tasks_count
+                active_tasks_count +=1
+                try:
+                    async for item in self.process_url(url, depth):
+                        if await self._check_if_stopped(): break
+                        await queue.put(item)
+                except Exception as e:
+                    logger.error(f"Error in task_wrapper for URL {url}: {e}", exc_info=True)
+                finally:
+                    active_tasks_count -= 1
+                    if active_tasks_count == 0 and not self._should_stop_event.is_set(): # Only signal natural completion
+                        await queue.put(None) 
+                    elif active_tasks_count == 0 and self._should_stop_event.is_set(): # If stopping, ensure queue is unblocked
+                        await queue.put(None) # Signal stop
+                        logger.info(f"All active tasks for job {self.job_id} finished after stop signal.")
+
+
+            for url in initial_urls_to_process:
+                if await self._check_if_stopped(): break
+                asyncio.create_task(task_wrapper(url, results_queue, 0))
+            
+            if active_tasks_count == 0 and not await self._check_if_stopped() : # if no tasks were created (e.g. initial_urls_to_process became empty after checks)
+                 await results_queue.put(None) # Sentinel if nothing was started
+
+            while True:
+                if await self._check_if_stopped() and active_tasks_count == 0:
+                    # If stopping and all tasks are done, force sentinel if not already there
+                    # This ensures the loop breaks if stop signal came during task processing.
+                    if results_queue.empty(): await results_queue.put(None)
+                
+                item = await results_queue.get()
+                if item is None: 
+                    results_queue.task_done()
+                    break
+                if await self._check_if_stopped(): # If stop signal after getting an item, don't yield
+                    results_queue.task_done()
+                    # Ensure any remaining items are drained if we are stopping early
+                    while not results_queue.empty():
+                        await results_queue.get()
+                        results_queue.task_done()
+                    if results_queue.empty(): await results_queue.put(None) # Put back sentinel to break main loop
+                    continue
+
+                yield item
+                results_queue.task_done()
+
+        if self._should_stop_event.is_set():
+            logger.info(f"Crawl job {self.job_id} stopped by signal.")
+            crud.update_crawl_job_status(db=self.db, job_id=self.job_id, status="failed") # Or a "stopped" status
+        else:
+            crud.update_crawl_job_status(db=self.db, job_id=self.job_id, status="completed")
+            logger.info(f"Crawl job {self.job_id} finished processing all tasks.")
         
-        # Keep track of active tasks to know when all initial processing paths are done
-        active_tasks_count = len(initial_urls_to_process)
-        
-        async def task_wrapper(url: str, queue: asyncio.Queue, depth: int):
-            nonlocal active_tasks_count
-            try:
-                async for item in self.process_url(url, depth):
-                    await queue.put(item)
-            except Exception as e:
-                logger.error(f"Error in task_wrapper for URL {url}: {e}", exc_info=True)
-            finally:
-                active_tasks_count -= 1
-                if active_tasks_count == 0:
-                    await queue.put(None) # Sentinel to signal completion of all initial tasks
-
-        # Launch tasks for each initial URL
-        for url in initial_urls_to_process:
-            # Depth 0 for initial URLs from seeds/dorks
-            asyncio.create_task(task_wrapper(url, results_queue, 0))
-
-        # Consume from the queue until all tasks are done and sentinel is received
-        while True:
-            item = await results_queue.get()
-            if item is None: # Sentinel received
-                results_queue.task_done() # Signal that this "None" item is processed
-                break
-            yield item
-            results_queue.task_done()
-
-        crud.update_crawl_job_status(db=self.db, job_id=self.job_id, status="completed")
-        logger.info(f"Crawl job {self.job_id} finished processing all tasks.")
         await self.http_client.aclose()
 
     async def _collect_async_gen(self, agen: AsyncGenerator[str, None]) -> List[str]:
-        """Helper to collect all items from an async generator into a list."""
         items = []
         try:
             async for item in agen:
+                if await self._check_if_stopped(): break
                 items.append(item)
         except Exception as e:
             logger.error(f"Error collecting from async generator: {e}", exc_info=True)
-            # Depending on policy, you might want to re-raise or just return collected items so far
         return items
-
-# Example of how it might be called by the API endpoint's background task
-# async def run_crawl_job_task(job_id: uuid.UUID, settings_dict: dict, db: Session):
-#     logger.info(f"Background task started for job {job_id}")
-#     crawl_settings = schemas.CrawlSettingsSchema(**settings_dict)
-#     crawler = MasterCrawler(job_id=job_id, crawl_settings=crawl_settings, db=db)
-#     async for downloaded_file_schema in crawler.start_crawling():
-#         logger.info(f"Job {job_id} found and processed: {downloaded_file_schema.file_url}")
-#     logger.info(f"Background task finished for job {job_id}")
+```

@@ -14,7 +14,6 @@ export interface DownloadedFileEntry {
   local_path?: string | null;
   file_size_bytes?: number | null;
   checksum_md5?: string | null;
-  // Removed status, as it's not in backend's DownloadedFileSchema
 }
 
 // Corresponds to backend's CrawlSettingsSchema (used as part of CrawlJob)
@@ -35,18 +34,14 @@ export interface CrawlSettings {
 export interface CrawlJob {
   id: string; // uuid.UUID
   name?: string | null;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'completed_empty';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'stopping' | 'completed_empty';
   created_at: string; // datetime (ISO string)
   updated_at: string; // datetime (ISO string)
-  // The settings from backend are flattened into CrawlJob model, but for payload, it's nested.
-  // For display, we might receive the full settings object or individual fields.
-  // The backend's models.CrawlJob stores settings as individual columns.
-  // The schemas.CrawlJobSchema reconstructs the CrawlSettingsSchema for response.
-  // So, the response for a CrawlJob should ideally include a nested 'settings' object.
-  // Let's assume the API returns a structure where settings are directly accessible 
-  // or reconstructable if needed. For POSTing, we use a nested structure.
-  // For GET /jobs, the backend returns schema.CrawlJobSchema which nests settings.
   settings: CrawlSettings; 
+  results_summary?: { // Added to match backend schema
+    files_found?: number;
+    // other summary fields can be added here
+  } | null;
 }
 
 
@@ -68,14 +63,4 @@ export interface SettingsData {
   respectRobotsTxt: boolean;
   requestDelay: number; // in seconds
 }
-
-// Deprecated: BreachData was similar to DownloadedFileEntry, using DownloadedFileEntry now.
-// export interface BreachData {
-//   id: string;
-//   sourceUrl: string;
-//   fileUrl: string;
-//   fileType: string;
-//   dateFound: string; 
-//   keywords: string[];
-//   status?: 'new' | 'reviewed' | 'ignored';
-// }
+```

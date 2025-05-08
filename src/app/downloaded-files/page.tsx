@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileTypeIcon } from '@/components/common/file-type-icon';
-import { Trash2, Search, Filter, FileQuestion, HardDriveDownload, ExternalLink, RefreshCcw, ServerCrash, Database, Save, Shapes, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trash2, Search, Filter, FileQuestion, HardDriveDownload, ExternalLink, RefreshCcw, ServerCrash, Database, Save, Shapes, ChevronLeft, ChevronRight, LinkIcon } from 'lucide-react';
 import type { DownloadedFileEntry } from '@/types';
 import { format, parseISO } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -28,11 +28,14 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { getDownloadedFiles, deleteDownloadedFileRecord } from '@/services/breachwatch-api';
 import { FILE_TYPE_EXTENSIONS } from '@/lib/constants';
+import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
+import { Label } from "@/components/ui/label"; // Import Label
+import Link from 'next/link';
 
 const ITEMS_PER_PAGE = 10;
 
-const formatBytes = (bytes: number, decimals = 2) => {
-  if (bytes === 0) return '0 Bytes';
+const formatBytes = (bytes: number | null | undefined, decimals = 2): string => {
+  if (bytes == null || bytes === 0) return '0 Bytes';
   const k = 1024;
   const dm = decimals < 0 ? 0 : decimals;
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
@@ -48,6 +51,7 @@ export default function DownloadedFilesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterFileType, setFilterFileType] = useState<string>('all');
   const [error, setError] = useState<string | null>(null);
+  const [deletePhysical, setDeletePhysical] = useState(false); // State for checkbox
   const { toast } = useToast();
 
   const fetchData = useCallback(async () => {
@@ -87,8 +91,12 @@ export default function DownloadedFilesPage() {
     const originalFile = files.find(item => item.id === id);
     setFiles(prevData => prevData.filter(item => item.id !== id)); 
     try {
-      await deleteDownloadedFileRecord(id); 
-      toast({ title: "File Record Deleted", description: `Record for file ID ${id} has been removed from the database.` });
+      await deleteDownloadedFileRecord(id, deletePhysical); // Pass checkbox state
+      toast({ 
+        title: "File Record Deleted", 
+        description: `Record for file ID ${id} removed.${deletePhysical ? ' Physical file deletion attempted.' : ''}` 
+      });
+      setDeletePhysical(false); // Reset checkbox state after deletion
     } catch (err) {
       console.error("Failed to delete file record:", err);
       if (originalFile) setFiles(prevData => [...prevData, originalFile].sort((a, b) => parseISO(b.downloaded_at).getTime() - parseISO(a.downloaded_at).getTime()));
@@ -116,11 +124,13 @@ export default function DownloadedFilesPage() {
         const sourceUrlMatch = item.source_url?.toLowerCase().includes(searchTermLower);
         const fileUrlMatch = item.file_url?.toLowerCase().includes(searchTermLower);
         const localPathMatch = item.local_path && item.local_path.toLowerCase().includes(searchTermLower);
+        const jobIdMatch = item.crawl_job_id.toLowerCase().includes(searchTermLower);
         return (
           sourceUrlMatch ||
           fileUrlMatch ||
           keywordsMatch ||
-          localPathMatch
+          localPathMatch ||
+          jobIdMatch
         );
       })
       .filter(item => filterFileType === 'all' || item.file_type === filterFileType);
@@ -236,7 +246,7 @@ export default function DownloadedFilesPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search URLs, keywords, local path..."
+                placeholder="Search URLs, keywords, local path, job ID..."
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
@@ -289,6 +299,7 @@ export default function DownloadedFilesPage() {
                   <TableHead>Keywords</TableHead>
                   <TableHead>Local Path</TableHead>
                   <TableHead>Size</TableHead>
+                  <TableHead>Job</TableHead>
                   <TableHead className="text-right w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -358,13 +369,31 @@ export default function DownloadedFilesPage() {
                                     <span className="text-xs">{item.local_path || 'N/A'}</span>
                                 </TooltipTrigger>
                                 <TooltipContent side="bottom" className="max-w-md">
-                                    <p>{item.local_path || 'Not available'}</p>
+                                    <p>Local Path: {item.local_path || 'Not stored locally or path unavailable'}</p>
                                 </TooltipContent>
                             </Tooltip>
                         </TooltipProvider>
                     </TableCell>
                     <TableCell>
-                        {item.file_size_bytes != null ? formatBytes(item.file_size_bytes) : 'N/A'}
+                        {formatBytes(item.file_size_bytes)}
+                    </TableCell>
+                    <TableCell className="max-w-[150px] truncate">
+                         <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                <Link href={`/jobs?highlight=${item.crawl_job_id}`} className="hover:underline text-muted-foreground hover:text-accent/80">
+                                    <span className="flex items-center text-xs">
+                                        <LinkIcon className="h-3 w-3 mr-1"/>
+                                        {item.crawl_job_id.substring(0,8)}...
+                                    </span>
+                                </Link>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                <p>Job ID: {item.crawl_job_id}</p>
+                                <p>Click to view this job in the Jobs page.</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                     </TableCell>
                     <TableCell className="text-right">
                       <TooltipProvider>
@@ -376,7 +405,7 @@ export default function DownloadedFilesPage() {
                           </TooltipTrigger>
                           <TooltipContent><p>Open Original File URL</p></TooltipContent>
                         </Tooltip>
-                         <AlertDialog>
+                         <AlertDialog onOpenChange={() => setDeletePhysical(false)}> {/* Reset checkbox on dialog open/close */}
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <AlertDialogTrigger asChild>
@@ -391,14 +420,25 @@ export default function DownloadedFilesPage() {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This action will remove the record of this downloaded file from the BreachWatch database.
-                                It does NOT delete the actual file from its original source URL or the server's local storage. This cannot be undone.
+                                This action will remove the record of this file from the BreachWatch database. 
+                                Check the box below if you also want to attempt deleting the physical file from the server's storage. 
+                                This cannot be undone.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
+                            <div className="flex items-center space-x-2 my-4">
+                                <Checkbox 
+                                    id={`delete-physical-${item.id}`} 
+                                    checked={deletePhysical} 
+                                    onCheckedChange={(checked) => setDeletePhysical(Boolean(checked))}
+                                />
+                                <Label htmlFor={`delete-physical-${item.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                    Also delete the physical file from server storage (if it exists).
+                                </Label>
+                            </div>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                               <AlertDialogAction onClick={() => handleDelete(item.id)} className="bg-destructive hover:bg-destructive/90">
-                                Delete Record
+                                Delete Record {deletePhysical ? 'and Physical File' : ''}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -443,3 +483,5 @@ export default function DownloadedFilesPage() {
   );
 }
 
+
+```

@@ -10,8 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileTypeIcon } from '@/components/common/file-type-icon';
-import { Eye, Trash2, RefreshCcw, Filter, Search, AlertTriangle, FileQuestion, ExternalLink, ServerCrash, ListChecks, Shapes, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { DownloadedFileEntry } from '@/types';
+import { Eye, Trash2, RefreshCcw, Filter, Search, AlertTriangle, FileQuestion, ExternalLink, ServerCrash, ListChecks, Shapes, ChevronLeft, ChevronRight, LinkIcon } from 'lucide-react';
+import type { DownloadedFileEntry, CrawlJob } from '@/types';
 import { format, parseISO } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -26,8 +26,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { getDownloadedFiles, deleteDownloadedFileRecord } from '@/services/breachwatch-api';
+import { getDownloadedFiles, deleteDownloadedFileRecord, getCrawlJob } from '@/services/breachwatch-api';
 import { FILE_TYPE_EXTENSIONS } from '@/lib/constants';
+import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 
 const ITEMS_PER_PAGE = 10;
@@ -41,12 +43,31 @@ export default function DashboardPage() {
   const [filterFileType, setFilterFileType] = useState<string>('all');
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const jobIdFromQuery = searchParams.get('job_id');
+  const [currentJobFilter, setCurrentJobFilter] = useState<CrawlJob | null>(null);
+
 
   const fetchData = useCallback(async () => {
     setIsRefreshing(true);
     setError(null);
+    setCurrentJobFilter(null);
     try {
-      const data = await getDownloadedFiles(undefined, 0, 500); 
+      if (jobIdFromQuery) {
+        try {
+            const jobDetails = await getCrawlJob(jobIdFromQuery);
+            setCurrentJobFilter(jobDetails);
+        } catch (jobError) {
+            console.warn(`Failed to fetch details for job ID ${jobIdFromQuery}:`, jobError);
+            toast({
+              title: "Warning",
+              description: `Could not fetch details for Job ID ${jobIdFromQuery}. Displaying all files.`,
+              variant: "default",
+            });
+        }
+      }
+      const data = await getDownloadedFiles(jobIdFromQuery || undefined, 0, 500); 
       data.sort((a, b) => parseISO(b.date_found).getTime() - parseISO(a.date_found).getTime());
       setDownloadedFiles(data);
     } catch (err) {
@@ -61,12 +82,12 @@ export default function DashboardPage() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [toast]);
+  }, [toast, jobIdFromQuery]);
 
   useEffect(() => {
     setIsLoading(true);
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, jobIdFromQuery]); // Add jobIdFromQuery as dependency
 
   const handleRefresh = () => {
     fetchData();
@@ -87,7 +108,9 @@ export default function DashboardPage() {
     const originalFile = downloadedFiles.find(item => item.id === id);
     setDownloadedFiles(prevData => prevData.filter(item => item.id !== id)); 
     try {
-      await deleteDownloadedFileRecord(id);
+      // For dashboard, typically we don't delete physical file, just the record.
+      // Set deletePhysical to false or remove if not needed for this view.
+      await deleteDownloadedFileRecord(id, false); 
       toast({ title: "File Record Deleted", description: `Record for file ID ${id} has been removed.` });
     } catch (err) {
       console.error("Failed to delete file record:", err);
@@ -98,6 +121,10 @@ export default function DashboardPage() {
         variant: "destructive",
       });
     }
+  };
+
+  const clearJobFilter = () => {
+    router.push('/dashboard'); // Navigates to /dashboard without job_id query param
   };
 
   const filteredData = useMemo(() => {
@@ -166,6 +193,26 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
+      {currentJobFilter && (
+        <Card className="mb-6 bg-primary/10 border-primary/30">
+          <CardHeader className="pb-2">
+            <div className="flex justify-between items-start">
+                <div>
+                <CardTitle className="text-lg flex items-center">
+                    <Filter className="h-5 w-5 mr-2 text-primary" />
+                    Filtered by Job: {currentJobFilter.name || currentJobFilter.id}
+                </CardTitle>
+                <CardDescription>
+                    Showing files discovered by this specific crawl job (Created: {format(parseISO(currentJobFilter.created_at), 'MMM dd, yyyy HH:mm')}).
+                </CardDescription>
+                </div>
+                <Button variant="ghost" size="sm" onClick={clearJobFilter}>
+                Clear Filter
+                </Button>
+            </div>
+          </CardHeader>
+        </Card>
+      )}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -174,7 +221,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{summaryStats.totalFiles}</div>
-            <p className="text-xs text-muted-foreground">files matching filters</p>
+            <p className="text-xs text-muted-foreground">files matching filters {currentJobFilter ? '(for this job)' : ''}</p>
           </CardContent>
         </Card>
         <Card>
@@ -184,7 +231,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{summaryStats.uniqueTypesCount}</div>
-            <p className="text-xs text-muted-foreground">distinct types in dataset</p>
+            <p className="text-xs text-muted-foreground">distinct types {currentJobFilter ? '(for this job)' : '(in dataset)'}</p>
           </CardContent>
         </Card>
       </div>
@@ -199,6 +246,7 @@ export default function DashboardPage() {
               </CardTitle>
               <CardDescription>
                 Files identified by backend crawlers. Review and manage findings.
+                {currentJobFilter ? ` Currently filtered by Job: ${currentJobFilter.name || currentJobFilter.id}` : ''}
               </CardDescription>
             </div>
             <Button onClick={handleRefresh} disabled={isRefreshing || isLoading} variant="outline">
@@ -243,7 +291,9 @@ export default function DashboardPage() {
               <FileQuestion className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
               <p className="text-xl font-semibold">No Files Found Matching Criteria.</p>
               <p className="text-muted-foreground">
-                {downloadedFiles.length > 0 ? "Try adjusting your search or filter criteria." : "No files have been discovered by the backend crawlers yet, or there was an issue fetching data."}
+                {downloadedFiles.length > 0 ? "Try adjusting your search or filter criteria." : 
+                 currentJobFilter ? `No files found for Job ${currentJobFilter.name || currentJobFilter.id}.` : 
+                 "No files have been discovered by the backend crawlers yet, or there was an issue fetching data."}
               </p>
               {downloadedFiles.length === 0 && !error && (
                 <Button onClick={handleRefresh} disabled={isRefreshing || isLoading} className="mt-6">
@@ -264,6 +314,7 @@ export default function DashboardPage() {
                   <TableHead>Date Found</TableHead>
                   <TableHead>Keywords</TableHead>
                   <TableHead>File Size</TableHead>
+                  {!currentJobFilter && <TableHead>Job</TableHead>} 
                   <TableHead className="text-right w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -328,6 +379,26 @@ export default function DashboardPage() {
                     <TableCell>
                       {item.file_size_bytes != null ? `${(item.file_size_bytes / (1024*1024)).toFixed(2)} MB` : 'N/A'}
                     </TableCell>
+                    {!currentJobFilter && (
+                        <TableCell className="max-w-[150px] truncate">
+                         <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                <Link href={`/jobs?highlight=${item.crawl_job_id}`} className="hover:underline text-muted-foreground hover:text-accent/80">
+                                    <span className="flex items-center text-xs">
+                                        <LinkIcon className="h-3 w-3 mr-1"/>
+                                        {item.crawl_job_id.substring(0,8)}...
+                                    </span>
+                                </Link>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                <p>Job ID: {item.crawl_job_id}</p>
+                                <p>Click to view this job in the Jobs page.</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                        </TableCell>
+                    )}
                     <TableCell className="text-right">
                       <TooltipProvider>
                          <Tooltip>
@@ -354,7 +425,7 @@ export default function DashboardPage() {
                               <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                               <AlertDialogDescription>
                                 This will remove the record of this file from the BreachWatch database.
-                                It does NOT delete the actual file from its original source URL or the server's local storage (if downloaded).
+                                It does NOT delete the actual file from its original source URL or the server's local storage.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -404,4 +475,3 @@ export default function DashboardPage() {
     </AppShell>
   );
 }
-

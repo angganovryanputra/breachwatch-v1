@@ -27,10 +27,10 @@ class CrawlJobCreateSchema(BaseModel):
 
 class CrawlJobSchema(CrawlJobCreateSchema):
     id: uuid.UUID
-    status: str = "pending" # e.g., pending, running, completed, failed
+    status: str = "pending" # e.g., pending, running, completed, failed, stopping, completed_empty
     created_at: datetime
     updated_at: datetime
-    # results_summary: Optional[Dict[str, int]] = None # e.g. {"files_found": 10, "potential_breaches": 2}
+    results_summary: Optional[Dict[str, int]] = Field(default_factory=dict) # e.g. {"files_found": 10}
 
     class Config:
         from_attributes = True # For SQLAlchemy model conversion (formerly orm_mode)
@@ -71,3 +71,4 @@ class PaginatedResponseSchema(BaseModel):
     page: int
     size: int
     pages: int
+```

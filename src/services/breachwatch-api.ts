@@ -16,7 +16,6 @@ async function apiRequest<T>(
     method,
     headers: {
       'Content-Type': 'application/json',
-      // Add other headers like Authorization if needed
     },
   };
 
@@ -31,13 +30,13 @@ async function apiRequest<T>(
       console.error(`API Error: ${response.status} ${response.statusText} for ${method} ${url}`, errorData);
       throw new Error(`API request failed: ${response.status} ${response.statusText}. Details: ${errorData}`);
     }
-    if (response.status === 204 || response.headers.get('content-length') === '0') { // Handle No Content
-        return null as T; // Or appropriate value for no content
+    if (response.status === 204 || response.headers.get('content-length') === '0') { 
+        return null as T; 
     }
     return response.json() as Promise<T>;
   } catch (error) {
     console.error(`Network or other error during API request to ${url}:`, error);
-    throw error; // Re-throw to be handled by the caller
+    throw error; 
   }
 }
 
@@ -61,6 +60,10 @@ export interface CreateCrawlJobPayload {
   settings: BackendCrawlSettings;
 }
 
+export interface MessageResponse {
+  message: string;
+}
+
 export const createCrawlJob = async (payload: CreateCrawlJobPayload): Promise<CrawlJob> => {
   return apiRequest<CrawlJob>('/crawl/jobs', 'POST', payload);
 };
@@ -71,6 +74,14 @@ export const getCrawlJobs = async (skip: number = 0, limit: number = 100): Promi
 
 export const getCrawlJob = async (jobId: string): Promise<CrawlJob> => {
   return apiRequest<CrawlJob>(`/crawl/jobs/${jobId}`);
+};
+
+export const stopCrawlJob = async (jobId: string): Promise<MessageResponse> => {
+  return apiRequest<MessageResponse>(`/crawl/jobs/${jobId}/stop`, 'POST');
+};
+
+export const deleteCrawlJob = async (jobId: string): Promise<void> => {
+  return apiRequest<void>(`/crawl/jobs/${jobId}`, 'DELETE');
 };
 
 // --- DownloadedFile Endpoints ---
@@ -84,32 +95,11 @@ export const getDownloadedFiles = async (jobId?: string, skip: number = 0, limit
   return apiRequest<DownloadedFileEntry[]>(path);
 };
 
-// Note: The backend currently doesn't have a specific endpoint to delete a single downloaded file by its ID
-// and also delete its physical file. This is a placeholder for such an endpoint.
-// The backend's crud.delete_downloaded_file only deletes the DB record.
-export const deleteDownloadedFileRecord = async (fileId: string): Promise<void> => {
-  // This endpoint would need to be implemented in the backend:
-  // e.g., DELETE /api/v1/crawl/results/downloaded/{file_id}
-  // For now, we'll call a non-existent path to show the intent.
-  // In a real scenario, this would require backend changes.
-  return apiRequest<void>(`/crawl/results/downloaded/${fileId}`, 'DELETE');
+export const deleteDownloadedFileRecord = async (fileId: string, deletePhysical: boolean = false): Promise<void> => {
+  // Backend expects `delete_physical` in the body for DELETE /results/downloaded/{file_id}
+  return apiRequest<void>(`/crawl/results/downloaded/${fileId}`, 'DELETE', { delete_physical: deletePhysical });
 };
 
-
-// --- File Content Download ---
-// This function would fetch the actual file content from the backend.
-// The backend needs an endpoint like GET /api/v1/files/download/{file_id_or_path}
-// For now, this is a conceptual placeholder. Frontend will use file_url for direct access.
-/*
-export const downloadFileContent = async (fileId: string): Promise<Blob> => {
-  const url = getApiUrl(`/files/download/${fileId}`); // Backend endpoint needed
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to download file: ${response.statusText}`);
-  }
-  return response.blob();
-};
-*/
 
 // Helper to parse frontend settings strings into backend-compatible arrays
 export const parseSettingsForBackend = (settings: SettingsData): BackendCrawlSettings => {
@@ -129,9 +119,9 @@ export const parseSettingsForBackend = (settings: SettingsData): BackendCrawlSet
     crawl_depth: settings.crawlDepth,
     respect_robots_txt: settings.respectRobotsTxt,
     request_delay_seconds: settings.requestDelay,
-    // These might not be in frontend SettingsData, provide defaults or make them optional
-    use_search_engines: true, // Default, or add to SettingsData
-    max_results_per_dork: 20, // Default, or add to SettingsData
-    max_concurrent_requests_per_domain: 2, // Default, or add to SettingsData
+    use_search_engines: true, 
+    max_results_per_dork: 20, 
+    max_concurrent_requests_per_domain: 2, 
   };
 };
+```

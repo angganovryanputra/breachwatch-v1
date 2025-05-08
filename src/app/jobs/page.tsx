@@ -8,11 +8,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { RefreshCcw, GanttChartSquare, ServerCrash, Play, Pause, StopCircle, Eye, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, XCircle, Loader2, Trash2 } from 'lucide-react';
+import { RefreshCcw, GanttChartSquare, ServerCrash, Play, Pause, StopCircle, Eye, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, XCircle, Loader2, Trash2, Files } from 'lucide-react';
 import type { CrawlJob } from '@/types';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import { useToast } from "@/hooks/use-toast";
-import { getCrawlJobs } from '@/services/breachwatch-api'; // Assuming deleteCrawlJob will be added to services
+import { getCrawlJobs, stopCrawlJob, deleteCrawlJob } from '@/services/breachwatch-api'; 
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +24,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Progress } from "@/components/ui/progress"; // For potential progress display
+import { Progress } from "@/components/ui/progress"; 
+import Link from 'next/link';
 
 
 const ITEMS_PER_PAGE = 10;
@@ -32,15 +33,17 @@ const ITEMS_PER_PAGE = 10;
 const getStatusBadgeVariant = (status: CrawlJob['status']): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
     case 'completed':
-      return 'default'; // Using primary color for completed
+      return 'default'; 
     case 'running':
-      return 'secondary'; // A less prominent color for running
+      return 'secondary'; 
     case 'pending':
       return 'outline';
     case 'failed':
       return 'destructive';
+    case 'stopping':
+      return 'destructive';
     case 'completed_empty':
-      return 'outline'; // Similar to pending, but distinct
+      return 'outline'; 
     default:
       return 'outline';
   }
@@ -56,6 +59,8 @@ const getStatusIcon = (status: CrawlJob['status']): JSX.Element => {
       return <Clock className="h-4 w-4 text-yellow-500" />;
     case 'failed':
       return <XCircle className="h-4 w-4 text-red-500" />;
+    case 'stopping':
+      return <StopCircle className="h-4 w-4 text-orange-600" />;
     case 'completed_empty':
         return <AlertCircle className="h-4 w-4 text-orange-500" />;
     default:
@@ -76,8 +81,7 @@ export default function CrawlJobsPage() {
     setIsRefreshing(true);
     setError(null);
     try {
-      const data = await getCrawlJobs(0, 100); // Fetch a larger set for client-side pagination for now
-      // Sort by creation date descending
+      const data = await getCrawlJobs(0, 100); 
       data.sort((a, b) => parseISO(b.created_at).getTime() - parseISO(a.created_at).getTime());
       setJobs(data);
     } catch (err) {
@@ -97,8 +101,7 @@ export default function CrawlJobsPage() {
   useEffect(() => {
     setIsLoading(true);
     fetchData();
-    // Optional: set up polling for job statuses
-    const intervalId = setInterval(fetchData, 30000); // Refresh every 30 seconds
+    const intervalId = setInterval(fetchData, 15000); // Refresh every 15 seconds
     return () => clearInterval(intervalId);
   }, [fetchData]);
 
@@ -108,26 +111,37 @@ export default function CrawlJobsPage() {
         toast({ title: "Refreshing Jobs", description: "Fetching latest crawl job statuses..." });
     }
   };
+  
+  const handleStopJob = async (jobId: string) => {
+    toast({ title: "Attempting to Stop Job", description: `Sending stop signal for job ${jobId}...`});
+    try {
+      const response = await stopCrawlJob(jobId);
+      toast({ title: "Stop Signal Sent", description: response.message });
+      fetchData(); // Refresh job list
+    } catch (err) {
+      console.error("Failed to stop job:", err);
+      toast({
+        title: "Error Stopping Job",
+        description: err instanceof Error ? err.message : "Could not stop the job.",
+        variant: "destructive",
+      });
+    }
+  };
 
-  // Placeholder for job actions - these would call backend APIs
-  const handlePauseJob = (jobId: string) => {
-    toast({ title: "Action Not Implemented", description: `Pausing job ${jobId} is not yet supported.`});
-    console.log("Pause job:", jobId);
-  };
-  const handleResumeJob = (jobId: string) => {
-    toast({ title: "Action Not Implemented", description: `Resuming job ${jobId} is not yet supported.`});
-    console.log("Resume job:", jobId);
-  };
-  const handleStopJob = (jobId: string) => {
-     toast({ title: "Action Not Implemented", description: `Stopping job ${jobId} is not yet supported.`});
-    console.log("Stop job:", jobId);
-  };
-   const handleDeleteJob = (jobId: string) => {
-    // TODO: Implement API call to delete job in services/breachwatch-api.ts and backend
-    toast({ title: "Action Not Implemented", description: `Deleting job ${jobId} record is not yet supported.`});
-    console.log("Delete job:", jobId);
-    // Optimistically remove from UI or refetch after API call
-    // setJobs(prevJobs => prevJobs.filter(job => job.id !== jobId));
+  const handleDeleteJob = async (jobId: string) => {
+    toast({ title: "Deleting Job", description: `Attempting to delete job ${jobId}...`});
+    try {
+      await deleteCrawlJob(jobId);
+      toast({ title: "Job Deleted", description: `Job ${jobId} and its associated data have been deleted.` });
+      setJobs(prevJobs => prevJobs.filter(job => job.id !== jobId)); // Optimistic update
+    } catch (err) {
+      console.error("Failed to delete job:", err);
+      toast({
+        title: "Error Deleting Job",
+        description: err instanceof Error ? err.message : "Could not delete the job.",
+        variant: "destructive",
+      });
+    }
   };
 
 
@@ -193,7 +207,7 @@ export default function CrawlJobsPage() {
               <GanttChartSquare className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
               <p className="text-xl font-semibold">No Crawl Jobs Found.</p>
               <p className="text-muted-foreground">
-                Create new crawl jobs from the Settings page.
+                Create new crawl jobs from the <Link href="/settings" className="text-accent hover:underline">Settings</Link> page.
               </p>
             </div>
           ) : (
@@ -203,12 +217,13 @@ export default function CrawlJobsPage() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Files Found</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Last Updated</TableHead>
-                    <TableHead>Total Keywords</TableHead>
-                    <TableHead>Total File Exts</TableHead>
+                    <TableHead>Keywords</TableHead>
+                    <TableHead>File Exts</TableHead>
                     <TableHead>Depth</TableHead>
-                    <TableHead className="text-right w-[180px]">Actions</TableHead>
+                    <TableHead className="text-right w-[150px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -218,11 +233,14 @@ export default function CrawlJobsPage() {
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span>{job.name || `Job ${job.id.substring(0,8)}...`}</span>
+                               <Link href={`/dashboard?job_id=${job.id}`} className="hover:underline text-accent">
+                                {job.name || `Job ${job.id.substring(0,8)}...`}
+                               </Link>
                             </TooltipTrigger>
                             <TooltipContent side="bottom" className="max-w-md">
                                <p className="font-semibold">{job.name || `Job ID: ${job.id}`}</p>
                                <p className="text-xs text-muted-foreground">ID: {job.id}</p>
+                               <p className="text-xs">Click to view files for this job on Dashboard.</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -232,9 +250,24 @@ export default function CrawlJobsPage() {
                            {getStatusIcon(job.status)}
                            <span className="capitalize">{job.status.replace('_', ' ')}</span>
                         </Badge>
-                         {job.status === 'running' && (
-                            <Progress value={50} className="h-1 w-full mt-1 bg-primary/20" /> // Placeholder progress
+                         {(job.status === 'running') && (
+                            <Progress value={undefined} className="h-1 w-full mt-1 bg-primary/20 animate-pulse" /> 
                          )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="flex items-center justify-center">
+                                <Files className="h-4 w-4 mr-1 text-muted-foreground"/>
+                                {job.results_summary?.files_found ?? 0}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>{job.results_summary?.files_found ?? 0} files found by this job.</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </TableCell>
                       <TableCell>
                         <TooltipProvider>
@@ -265,67 +298,40 @@ export default function CrawlJobsPage() {
                       <TableCell className="text-center">{job.settings.crawl_depth}</TableCell>
                       <TableCell className="text-right space-x-1">
                         <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" onClick={() => alert(`View details for Job ID: ${job.id}`)} disabled>
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent><p>View Details (Not Implemented)</p></TooltipContent>
-                          </Tooltip>
-                          {/* {job.status === 'running' && (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" onClick={() => handlePauseJob(job.id)} className="text-yellow-500 hover:text-yellow-400" disabled>
-                                    <Pause className="h-4 w-4" />
-                                </Button>
-                                </TooltipTrigger>
-                                <TooltipContent><p>Pause Job (Not Implemented)</p></TooltipContent>
-                            </Tooltip>
-                          )}
-                          {job.status === 'pending' && ( // Or paused
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" onClick={() => handleResumeJob(job.id)}  className="text-green-500 hover:text-green-400" disabled>
-                                    <Play className="h-4 w-4" />
-                                </Button>
-                                </TooltipTrigger>
-                                <TooltipContent><p>Resume/Start Job (Not Implemented)</p></TooltipContent>
-                            </Tooltip>
-                          )}
                            {(job.status === 'running' || job.status === 'pending') && (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" onClick={() => handleStopJob(job.id)} className="text-orange-500 hover:text-orange-400" disabled>
+                                <Button variant="ghost" size="icon" onClick={() => handleStopJob(job.id)} className="text-orange-500 hover:text-orange-400">
                                     <StopCircle className="h-4 w-4" />
                                 </Button>
                                 </TooltipTrigger>
-                                <TooltipContent><p>Stop Job (Not Implemented)</p></TooltipContent>
+                                <TooltipContent><p>Stop Job</p></TooltipContent>
                             </Tooltip>
-                          )} */}
+                          )}
                            <AlertDialog>
                             <Tooltip>
                                 <TooltipTrigger asChild>
                                 <AlertDialogTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/80 hover:bg-destructive/10" disabled>
+                                    <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/80 hover:bg-destructive/10">
                                     <Trash2 className="h-4 w-4" />
                                     </Button>
                                 </AlertDialogTrigger>
                                 </TooltipTrigger>
-                                <TooltipContent><p>Delete Job (Not Implemented)</p></TooltipContent>
+                                <TooltipContent><p>Delete Job</p></TooltipContent>
                             </Tooltip>
                             <AlertDialogContent>
                                 <AlertDialogHeader>
                                 <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                    This action will attempt to delete the crawl job record and potentially associated data.
-                                    This action cannot be undone. (Backend functionality for full deletion might be pending).
+                                    This action will permanently delete the crawl job &quot;{job.name || job.id}&quot;, 
+                                    all its associated downloaded file records from the database, and 
+                                    all physical files downloaded by this job from the server. This cannot be undone.
                                 </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                                 <AlertDialogAction onClick={() => handleDeleteJob(job.id)} className="bg-destructive hover:bg-destructive/90">
-                                    Delete Job Record
+                                    Delete Job and All Data
                                 </AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogContent>
@@ -370,3 +376,4 @@ export default function CrawlJobsPage() {
   );
 }
 
+```
