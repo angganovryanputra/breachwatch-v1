@@ -482,6 +482,3 @@ export default function DownloadedFilesPage() {
     </AppShell>
   );
 }
-
-
-```

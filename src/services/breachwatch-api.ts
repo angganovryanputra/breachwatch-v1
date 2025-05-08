@@ -124,4 +124,3 @@ export const parseSettingsForBackend = (settings: SettingsData): BackendCrawlSet
     max_concurrent_requests_per_domain: 2, 
   };
 };
-```
