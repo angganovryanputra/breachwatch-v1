@@ -86,6 +86,10 @@ export const deleteCrawlJob = async (jobId: string): Promise<void> => {
   return apiRequest<void>(`/crawl/jobs/${jobId}`, 'DELETE');
 };
 
+export const manuallyRunJob = async (jobId: string): Promise<CrawlJob> => {
+  return apiRequest<CrawlJob>(`/crawl/jobs/${jobId}/run`, 'POST');
+};
+
 // --- DownloadedFile Endpoints ---
 
 export const getDownloadedFiles = async (jobId?: string, skip: number = 0, limit: number = 100): Promise<DownloadedFileEntry[]> => {
