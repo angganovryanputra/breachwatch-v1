@@ -3,11 +3,11 @@ from sqlalchemy.orm import Session, selectinload, joinedload
 from sqlalchemy import func
 from typing import List, Optional, Tuple
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone # Ensure timezone import
 
 from . import models
 from breachwatch.api.v1 import schemas # For Pydantic schemas
-# from breachwatch.core.security import get_password_hash # TODO: Implement security utils
+from breachwatch.core.security import get_password_hash # Import security utils
 
 logger = logging.getLogger(__name__)
 
@@ -38,24 +38,34 @@ def create_crawl_job(db: Session, crawl_job_in: schemas.CrawlJobCreateSchema) ->
     next_run_time_for_job = None
 
     if settings.schedule:
+        schedule = settings.schedule
         initial_status = "scheduled"
-        if settings.schedule.type == "one-time" and settings.schedule.run_at:
-            next_run_time_for_job = settings.schedule.run_at
-        elif settings.schedule.type == "recurring" and settings.schedule.cron_expression:
-            # Placeholder for CRON parsing and next run time calculation
-            # This would typically involve a library like `croniter`
-            # For now, we'll set it to a future time or leave it to a scheduler service to update
-            # from croniter import croniter
-            # from datetime import datetime, timezone
-            # try:
-            #     iter = croniter(settings.schedule.cron_expression, datetime.now(timezone.utc))
-            #     next_run_time_for_job = iter.get_next(datetime)
-            # except Exception as e:
-            #     logger.error(f"Could not calculate next run time for cron '{settings.schedule.cron_expression}': {e}")
-            #     initial_status = "failed" # Or handle error differently
-            logger.warning(f"Recurring job created with cron '{settings.schedule.cron_expression}'. Next run time calculation needs robust implementation.")
-            # For now, as a placeholder, let's assume a scheduler will pick it up based on cron.
-            # Or, if one-time, `run_at` is already a datetime.
+        if schedule.type == "one-time" and schedule.run_at:
+            next_run_time_for_job = schedule.run_at
+        elif schedule.type == "recurring" and schedule.cron_expression:
+            try:
+                from croniter import croniter # type: ignore
+                from zoneinfo import ZoneInfo, ZoneInfoNotFoundError # type: ignore
+                
+                tz_str = schedule.timezone or 'UTC'
+                try:
+                    tz = ZoneInfo(tz_str)
+                except ZoneInfoNotFoundError:
+                    logger.warning(f"Invalid timezone '{tz_str}' in schedule. Defaulting to UTC.")
+                    tz = ZoneInfo('UTC')
+                    
+                base_time = datetime.now(tz) # Calculate next run based on current time in target timezone
+                iter = croniter(schedule.cron_expression, base_time)
+                next_run_dt_local = iter.get_next(datetime)
+                # Convert the calculated local time back to UTC for storage
+                next_run_time_for_job = next_run_dt_local.astimezone(timezone.utc) 
+                logger.info(f"Calculated next run time for cron '{schedule.cron_expression}' in tz '{tz_str}': {next_run_time_for_job} UTC")
+            except ImportError:
+                logger.error("croniter library not installed. Cannot calculate next run time for recurring jobs. Please install with 'pip install croniter zoneinfo'.")
+                initial_status = "failed" # Mark job as failed if scheduling fails
+            except Exception as e:
+                logger.error(f"Could not calculate next run time for cron '{schedule.cron_expression}' with timezone '{schedule.timezone}': {e}")
+                initial_status = "failed" 
 
     db_crawl_job = models.CrawlJob(
         name=crawl_job_in.name,
@@ -73,7 +83,7 @@ def create_crawl_job(db: Session, crawl_job_in: schemas.CrawlJobCreateSchema) ->
         settings_custom_user_agent=settings.custom_user_agent,
         settings_schedule_type=settings.schedule.type if settings.schedule else None,
         settings_schedule_cron_expression=settings.schedule.cron_expression if settings.schedule else None,
-        settings_schedule_run_at=settings.schedule.run_at if settings.schedule else None,
+        settings_schedule_run_at=settings.schedule.run_at if settings.schedule and settings.schedule.type == 'one-time' else None, # Store original run_at only for one-time
         settings_schedule_timezone=settings.schedule.timezone if settings.schedule else None,
         next_run_at=next_run_time_for_job,
         last_run_at=None
@@ -89,11 +99,24 @@ def update_crawl_job_status(db: Session, job_id: uuid.UUID, status: str, next_ru
     db_crawl_job = get_crawl_job(db, job_id) 
     if db_crawl_job:
         db_crawl_job.status = status
-        db_crawl_job.updated_at = datetime.now(uuid.uuid1().node) # Use UTC now 
+        db_crawl_job.updated_at = datetime.now(timezone.utc) # Use UTC now 
         if next_run_at is not None: # Explicitly check for None to allow clearing
-            db_crawl_job.next_run_at = next_run_at
+             # Ensure datetime is timezone-aware (UTC) before saving
+            if next_run_at.tzinfo is None:
+                logger.warning(f"Received naive datetime {next_run_at} for next_run_at, assuming UTC.")
+                db_crawl_job.next_run_at = next_run_at.replace(tzinfo=timezone.utc)
+            else:
+                db_crawl_job.next_run_at = next_run_at.astimezone(timezone.utc)
+        else: # Allow clearing next_run_at if None is passed
+            db_crawl_job.next_run_at = None 
+            
         if last_run_at:
-            db_crawl_job.last_run_at = last_run_at
+             # Ensure datetime is timezone-aware (UTC) before saving
+            if last_run_at.tzinfo is None:
+                logger.warning(f"Received naive datetime {last_run_at} for last_run_at, assuming UTC.")
+                db_crawl_job.last_run_at = last_run_at.replace(tzinfo=timezone.utc)
+            else:
+                db_crawl_job.last_run_at = last_run_at.astimezone(timezone.utc)
         
         db.commit()
         db.refresh(db_crawl_job)
@@ -163,22 +186,13 @@ def delete_downloaded_file(db: Session, file_id: uuid.UUID) -> Optional[models.D
 def get_due_scheduled_jobs(db: Session, now_utc: Optional[datetime] = None) -> List[models.CrawlJob]:
     """Fetches scheduled jobs whose next_run_at is due."""
     if now_utc is None:
-        now_utc = datetime.now(uuid.uuid1().node) # Simplistic UTC now, better to pass from scheduler
+        now_utc = datetime.now(timezone.utc) 
     
     return db.query(models.CrawlJob).filter(
         models.CrawlJob.status == "scheduled",
         models.CrawlJob.next_run_at <= now_utc
     ).order_by(models.CrawlJob.next_run_at).all()
 
-# Example: To update next_run_at after a job runs (or if croniter is used)
-# def update_job_next_run(db: Session, job_id: uuid.UUID, new_next_run_at: datetime):
-#     job = db.query(models.CrawlJob).filter(models.CrawlJob.id == job_id).first()
-#     if job:
-#         job.next_run_at = new_next_run_at
-#         job.last_run_at = datetime.utcnow() # Assuming job just ran
-#         db.commit()
-#         db.refresh(job)
-#     return job
 
 # --- User CRUD ---
 
@@ -186,17 +200,15 @@ def get_user(db: Session, user_id: uuid.UUID) -> Optional[models.User]:
     return db.query(models.User).filter(models.User.id == user_id).first()
 
 def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
-    return db.query(models.User).filter(models.User.email == email).first()
+    return db.query(models.User).filter(func.lower(models.User.email) == func.lower(email)).first()
 
 def get_users(db: Session, skip: int = 0, limit: int = 100) -> List[models.User]:
-    return db.query(models.User).offset(skip).limit(limit).all()
+    return db.query(models.User).order_by(models.User.created_at).offset(skip).limit(limit).all()
 
 def create_user(db: Session, user_in: schemas.UserCreateSchema) -> models.User:
-    # hashed_password = get_password_hash(user_in.password) # Use password hashing
-    # Placeholder for hashed password until security utils are implemented
-    hashed_password = user_in.password + "_hashed" # Replace with actual hashing!
+    hashed_password = get_password_hash(user_in.password) 
     db_user = models.User(
-        email=user_in.email,
+        email=user_in.email.lower(), # Store email in lowercase for consistency
         hashed_password=hashed_password,
         full_name=user_in.full_name,
         is_active=user_in.is_active,
@@ -214,11 +226,41 @@ def update_user_role(db: Session, user_id: uuid.UUID, role: str) -> Optional[mod
     db_user = get_user(db, user_id)
     if db_user:
         db_user.role = role
-        db_user.updated_at = datetime.now(uuid.uuid1().node)
+        db_user.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(db_user)
         logger.info(f"Updated role for user {user_id} to {role}")
     return db_user
+    
+def update_user_status(db: Session, user_id: uuid.UUID, is_active: bool) -> Optional[models.User]:
+    db_user = get_user(db, user_id)
+    if db_user:
+        db_user.is_active = is_active
+        db_user.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(db_user)
+        logger.info(f"Updated active status for user {user_id} to {is_active}")
+    return db_user
+
+def update_user_password(db: Session, user_id: uuid.UUID, hashed_password: str) -> Optional[models.User]:
+    db_user = get_user(db, user_id)
+    if db_user:
+        db_user.hashed_password = hashed_password
+        db_user.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(db_user)
+        logger.info(f"Updated password for user {user_id}")
+    return db_user
+
+def delete_user_by_id(db: Session, user_id: uuid.UUID) -> Optional[models.User]:
+    """Deletes a user by their ID."""
+    db_user = get_user(db, user_id)
+    if db_user:
+        db.delete(db_user)
+        db.commit()
+        logger.info(f"User {user_id} deleted from DB.")
+    return db_user
+
 
 # --- UserPreference CRUD ---
 
@@ -232,7 +274,7 @@ def update_or_create_user_preferences(db: Session, user_id: uuid.UUID, preferenc
         db_prefs.default_items_per_page = preferences_in.default_items_per_page
         db_prefs.receive_email_notifications = preferences_in.receive_email_notifications
         # Update other fields from preferences_in as needed
-        db_prefs.updated_at = datetime.now(uuid.uuid1().node)
+        db_prefs.updated_at = datetime.now(timezone.utc)
         logger.info(f"Updating preferences for user {user_id}")
     else:
         # Create new preferences
@@ -251,6 +293,11 @@ def update_or_create_user_preferences(db: Session, user_id: uuid.UUID, preferenc
 
 def create_default_user_preferences(db: Session, user_id: uuid.UUID) -> models.UserPreference:
     """Creates default preferences for a user, usually upon creation."""
+    existing_prefs = get_user_preferences(db, user_id)
+    if existing_prefs:
+        logger.debug(f"Default preferences already exist for user {user_id}. Skipping creation.")
+        return existing_prefs
+        
     default_prefs = schemas.UserPreferenceUpdateSchema() # Gets defaults from schema
     db_prefs = models.UserPreference(
         user_id=user_id,
@@ -262,3 +309,4 @@ def create_default_user_preferences(db: Session, user_id: uuid.UUID) -> models.U
     db.refresh(db_prefs)
     logger.info(f"Created default preferences for user {user_id}")
     return db_prefs
+

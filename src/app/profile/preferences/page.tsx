@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { UserPreferences as UserPreferencesType } from '@/types';
 import { Save, UserCog, RotateCcw, Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
-import { getUserPreferences, updateUserPreferences } from '@/services/breachwatch-api';
+import { getUserPreferences, updateUserPreferences } from '@/services/breachwatch-api'; // Use new API functions
 
 const DEFAULT_PREFERENCES: Omit<UserPreferencesType, 'user_id' | 'updated_at'> = {
   default_items_per_page: 10,
@@ -20,53 +20,57 @@ const DEFAULT_PREFERENCES: Omit<UserPreferencesType, 'user_id' | 'updated_at'> =
 };
 
 export default function UserPreferencesPage() {
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const [preferences, setPreferences] = useState<Omit<UserPreferencesType, 'user_id' | 'updated_at'>>(DEFAULT_PREFERENCES);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
+  const fetchPreferences = useCallback(async (userId: string) => {
+      setIsLoading(true);
+      try {
+        const data = await getUserPreferences(userId);
+        if (data) {
+          setPreferences({
+            default_items_per_page: data.default_items_per_page,
+            receive_email_notifications: data.receive_email_notifications,
+          });
+        } else {
+          setPreferences(DEFAULT_PREFERENCES);
+        }
+      } catch (error) {
+        console.error("Failed to fetch user preferences:", error);
+        toast({
+          title: "Error Loading Preferences",
+          description: "Could not load your preferences. Using default values.",
+          variant: "destructive",
+        });
+        setPreferences(DEFAULT_PREFERENCES);
+      } finally {
+        setIsLoading(false);
+      }
+  }, [toast]);
+
   useEffect(() => {
     if (user?.id) {
-      setIsLoading(true);
-      getUserPreferences(user.id)
-        .then(data => {
-          if (data) {
-            setPreferences({
-              default_items_per_page: data.default_items_per_page,
-              receive_email_notifications: data.receive_email_notifications,
-            });
-          } else {
-            // If no preferences found, use defaults
-            setPreferences(DEFAULT_PREFERENCES);
-          }
-        })
-        .catch(error => {
-          console.error("Failed to fetch user preferences:", error);
-          toast({
-            title: "Error Loading Preferences",
-            description: "Could not load your preferences. Using default values.",
-            variant: "destructive",
-          });
-          setPreferences(DEFAULT_PREFERENCES);
-        })
-        .finally(() => setIsLoading(false));
-    } else {
-      // Handle case where user is not available (e.g. still loading auth state)
-      // Or redirect if user must be authenticated for this page
-       setIsLoading(false); // Stop loading if no user ID
+        fetchPreferences(user.id);
+    } else if (!isAuthLoading) {
+      // If auth is not loading and user is still null, means not logged in
+      setIsLoading(false); // Stop loading indicator
+      // Potentially show a message or redirect (AppShell might handle redirect)
     }
-  }, [user, toast]);
+  }, [user, isAuthLoading, fetchPreferences]);
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
     setPreferences(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : type === 'number' ? parseInt(value, 10) : value,
+      [name]: type === 'checkbox' ? checked : type === 'number' ? parseInt(value, 10) || 0 : value, // Ensure number parsing
     }));
   };
   
-  const handleSwitchChange = (checked: boolean, name: keyof typeof preferences) => {
+  const handleSwitchChange = (checked: boolean, name: keyof Omit<UserPreferencesType, 'user_id' | 'updated_at'>) => {
     setPreferences(prev => ({
       ...prev,
       [name]: checked,
@@ -81,11 +85,12 @@ export default function UserPreferencesPage() {
     }
     setIsSaving(true);
     try {
-      const payload: UserPreferencesType = {
-        user_id: user.id,
-        ...preferences,
+      // Prepare payload with only the necessary fields
+      const payload: Omit<UserPreferencesType, 'user_id' | 'updated_at'> = {
+        default_items_per_page: preferences.default_items_per_page,
+        receive_email_notifications: preferences.receive_email_notifications,
       };
-      await updateUserPreferences(user.id, payload);
+      await updateUserPreferences(user.id, payload); // Pass only the updatable fields
       toast({
         title: "Preferences Saved",
         description: "Your preferences have been successfully updated.",
@@ -94,7 +99,7 @@ export default function UserPreferencesPage() {
       console.error("Failed to save user preferences:", error);
       toast({
         title: "Error Saving Preferences",
-        description: "Could not save your preferences. Please try again.",
+        description: error instanceof Error ? error.message : "Could not save your preferences. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -111,7 +116,7 @@ export default function UserPreferencesPage() {
     });
   };
 
-  if (isLoading) {
+  if (isLoading || isAuthLoading) {
     return (
       <AppShell>
         <div className="flex items-center justify-center h-full">
@@ -157,6 +162,7 @@ export default function UserPreferencesPage() {
               min="5"
               max="100"
               className="w-32"
+              disabled={isSaving}
             />
             <p className="text-sm text-muted-foreground">
               Set the default number of items displayed in tables (e.g., Dashboard, File Records).
@@ -169,6 +175,7 @@ export default function UserPreferencesPage() {
               name="receive_email_notifications"
               checked={preferences.receive_email_notifications}
               onCheckedChange={(checked) => handleSwitchChange(checked, "receive_email_notifications")}
+              disabled={isSaving}
             />
             <Label htmlFor="receive_email_notifications">Receive Email Notifications</Label>
           </div>
@@ -177,25 +184,6 @@ export default function UserPreferencesPage() {
             </p>
 
           {/* Add more preference settings here as needed */}
-          {/* Example:
-          <div className="space-y-2">
-            <Label htmlFor="theme">Theme</Label>
-            <Select
-              name="theme"
-              value={preferences.theme}
-              onValueChange={(value) => setPreferences(prev => ({...prev, theme: value}))}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Select theme" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="dark">Dark</SelectItem>
-                <SelectItem value="light">Light</SelectItem>
-                <SelectItem value="system">System</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          */}
 
         </CardContent>
         <CardFooter className="flex justify-end space-x-3 border-t pt-6">

@@ -22,8 +22,22 @@ export interface User {
   name?: string | null;
   email: string;
   role: UserRole;
+  is_active: boolean; // Added from backend schema
   avatarUrl?: string | null; // Optional: for displaying user avatar
+  created_at?: string; // Added from backend schema
+  updated_at?: string; // Added from backend schema
 }
+
+// For updating user status (corresponds to backend schema)
+export interface UserStatusUpdate {
+  is_active: boolean;
+}
+
+// For updating user role (corresponds to backend schema)
+export interface UserRoleUpdate {
+  role: UserRole;
+}
+
 
 export interface UserPreferences {
   user_id: string;
@@ -93,14 +107,15 @@ export interface SettingsFormData {
   crawlDepth: number;
   respectRobotsTxt: boolean;
   requestDelay: number; // in seconds
-  customUserAgent: string; // Optional custom user agent
-  maxResultsPerDork: number;
-  maxConcurrentRequestsPerDomain: number;
+  customUserAgent?: string; // Optional custom user agent
+  maxResultsPerDork?: number;
+  maxConcurrentRequestsPerDomain?: number;
   // Scheduling fields
   scheduleEnabled: boolean;
   scheduleType: 'one-time' | 'recurring';
-  scheduleCronExpression: string; // For recurring
-  scheduleRunAtDate: string; // For one-time date part
-  scheduleRunAtTime: string; // For one-time time part
-  scheduleTimezone: string;
+  scheduleCronExpression?: string; // For recurring
+  scheduleRunAtDate?: string; // For one-time date part (YYYY-MM-DD)
+  scheduleRunAtTime?: string; // For one-time time part (HH:MM)
+  scheduleTimezone?: string;
 }
+

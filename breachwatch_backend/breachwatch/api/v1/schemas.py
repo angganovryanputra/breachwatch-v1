@@ -117,6 +117,17 @@ class UserSchema(UserBaseSchema):
 
     class Config:
         from_attributes = True
+        
+class UserStatusUpdateSchema(BaseModel):
+    is_active: bool
+
+class UserRoleUpdateSchema(BaseModel):
+    role: str = Field(..., pattern="^(user|admin)$") # Ensure role is valid
+
+class PasswordChangeSchema(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
 
 class TokenSchema(BaseModel):
     access_token: str
@@ -154,3 +165,4 @@ class PaginatedResponseSchema(BaseModel):
     page: int
     size: int
     pages: int
+
