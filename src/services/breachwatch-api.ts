@@ -1,5 +1,6 @@
+
 // src/services/breachwatch-api.ts
-import type { SettingsFormData, DownloadedFileEntry, CrawlJob, ScheduleData, UserPreferences, User, UserStatusUpdate, UserRoleUpdate } from '@/types';
+import type { SettingsFormData, DownloadedFileEntry, CrawlJob, ScheduleData, UserPreferences, User, UserStatusUpdate, UserRoleUpdate, PasswordChangePayload } from '@/types';
 import { NEXT_PUBLIC_BACKEND_API_URL } from '@/config/config';
 
 // Helper to construct full API URLs
@@ -34,7 +35,11 @@ async function apiRequest<T>(
         const errorData = await response.json();
         errorDetails = errorData.detail || JSON.stringify(errorData);
       } catch (e) {
-        errorDetails = await response.text().catch(() => 'Failed to parse error response');
+        try {
+            errorDetails = await response.text();
+        } catch (textError) {
+             errorDetails = 'Failed to parse error response';
+        }
       }
       console.error(`API Error: ${response.status} ${response.statusText} for ${method} ${url}`, errorDetails);
       // For 404 on GET preferences, we might want to return null instead of throwing an error.
@@ -43,13 +48,18 @@ async function apiRequest<T>(
       }
       throw new Error(`API request failed: ${response.status} ${response.statusText}. Details: ${errorDetails}`);
     }
-    if (response.status === 204 || response.headers.get('content-length') === '0') { 
-        return null as T; 
+    if (response.status === 204 || response.headers.get('content-length') === '0') {
+        return null as T;
     }
     return response.json() as Promise<T>;
-  } catch (error) {
+  } catch (error: unknown) {
     console.error(`Network or other error during API request to ${url}:`, error);
-    throw error; 
+    // Check if it's a fetch-related TypeError (often wraps NetworkError)
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+         throw new Error(`Network Error: Failed to connect to the backend at ${url}. Please ensure the backend service is running and reachable.`);
+    }
+    // Re-throw other errors
+    throw error;
   }
 }
 
@@ -122,6 +132,7 @@ export const deleteDownloadedFileRecord = async (fileId: string, deletePhysical:
 
 // --- User Preferences Endpoints ---
 export const getUserPreferences = async (userId: string): Promise<UserPreferences | null> => {
+  // Handling 404 specifically within apiRequest now
   return apiRequest<UserPreferences | null>(`/users/${userId}/preferences`, 'GET');
 };
 
@@ -152,11 +163,8 @@ export const deleteUser = async (userId: string): Promise<void> => {
 };
 
 // --- Password Change Endpoint ---
-export const changePassword = async (userId: string, currentPassword: string, newPassword: string): Promise<MessageResponse> => {
-  const payload = {
-    current_password: currentPassword,
-    new_password: newPassword,
-  };
+export const changePassword = async (userId: string, payload: PasswordChangePayload ): Promise<MessageResponse> => {
+  // The payload already matches the backend schema (current_password, new_password)
   return apiRequest<MessageResponse>(`/users/${userId}/password`, 'PUT', payload);
 };
 
@@ -167,7 +175,7 @@ export const parseSettingsForBackend = (settings: SettingsFormData): BackendCraw
   const parseStringList = (str: string | undefined, separator: RegExp = /,|\n/): string[] => {
     return str ? str.split(separator).map(s => s.trim()).filter(s => s) : [];
   };
-  
+
   const parseFileExtensions = (str: string | undefined): string[] => {
      // Returns extensions *without* the leading dot for backend
      return str ? str.split(/,|\n/).map(s => s.trim().replace(/^\./, '')).filter(s => s) : [];
@@ -175,33 +183,44 @@ export const parseSettingsForBackend = (settings: SettingsFormData): BackendCraw
 
   let schedule: ScheduleData | null = null;
   if (settings.scheduleEnabled) {
-    schedule = {
-      type: settings.scheduleType,
-      // Use ?. for optional chaining and provide null if undefined/empty
-      cronExpression: settings.scheduleType === 'recurring' ? settings.scheduleCronExpression?.trim() || null : null,
-      runAt: settings.scheduleType === 'one-time' && settings.scheduleRunAtDate && settings.scheduleRunAtTime
-        ? new Date(`${settings.scheduleRunAtDate}T${settings.scheduleRunAtTime}:00`).toISOString() 
-        : null,
-      timezone: settings.scheduleTimezone?.trim() || null,
-    };
-     // Validate that required fields for the type are present
-     if (schedule.type === 'recurring' && !schedule.cronExpression) {
-         console.warn("Recurring schedule enabled but cron expression is missing.");
-         // Optionally throw an error or default schedule to null
-         // schedule = null; 
-     }
-     if (schedule.type === 'one-time' && !schedule.runAt) {
-         console.warn("One-time schedule enabled but run date/time is missing or invalid.");
-         // Optionally throw an error or default schedule to null
-         // schedule = null;
-     }
+    const type = settings.scheduleType;
+    const cronExpression = settings.scheduleCronExpression?.trim() || null;
+    const runAtDate = settings.scheduleRunAtDate;
+    const runAtTime = settings.scheduleRunAtTime;
+    const timezone = settings.scheduleTimezone?.trim() || null;
+
+    let runAtISO: string | null = null;
+    if (type === 'one-time' && runAtDate && runAtTime) {
+        try {
+            // Combine date and time, assume local timezone if none specified, then convert to UTC ISO string
+            // TODO: Backend should ideally handle timezone conversion based on provided `timezone` field
+            runAtISO = new Date(`${runAtDate}T${runAtTime}:00`).toISOString();
+        } catch (e) {
+            console.error("Error constructing date from parts:", e);
+        }
+    }
+
+    // Check if schedule is valid for its type
+    const isValidRecurring = type === 'recurring' && !!cronExpression;
+    const isValidOneTime = type === 'one-time' && !!runAtISO;
+
+    if (isValidRecurring || isValidOneTime) {
+         schedule = {
+            type: type,
+            cronExpression: isValidRecurring ? cronExpression : null,
+            runAt: isValidOneTime ? runAtISO : null,
+            timezone: timezone,
+        };
+    } else {
+         console.warn(`Schedule config incomplete for type '${type}'. Schedule will not be set.`);
+    }
   }
 
 
   return {
     keywords: parseStringList(settings.keywords),
     file_extensions: parseFileExtensions(settings.fileExtensions),
-    seed_urls: parseStringList(settings.seedUrls),
+    seed_urls: parseStringList(settings.seedUrls), // Backend expects strings
     search_dorks: parseStringList(settings.searchDorks),
     crawl_depth: settings.crawlDepth,
     respect_robots_txt: settings.respectRobotsTxt,
