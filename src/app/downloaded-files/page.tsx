@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileTypeIcon } from '@/components/common/file-type-icon';
-import { Trash2, Search, Filter, FileQuestion, HardDriveDownload, ExternalLink, RefreshCcw, ServerCrash, Eye } from 'lucide-react';
+import { Trash2, Search, Filter, FileQuestion, HardDriveDownload, ExternalLink, RefreshCcw, ServerCrash, Database, Save, Shapes, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { DownloadedFileEntry } from '@/types';
 import { format, parseISO } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -23,13 +23,22 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, // Added AlertDialogTrigger import
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { getDownloadedFiles, deleteDownloadedFileRecord } from '@/services/breachwatch-api';
 import { FILE_TYPE_EXTENSIONS } from '@/lib/constants';
 
 const ITEMS_PER_PAGE = 10;
+
+const formatBytes = (bytes: number, decimals = 2) => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+};
 
 export default function DownloadedFilesPage() {
   const [files, setFiles] = useState<DownloadedFileEntry[]>([]);
@@ -45,10 +54,7 @@ export default function DownloadedFilesPage() {
     setIsRefreshing(true);
     setError(null);
     try {
-      // Fetch all downloaded files (no job_id filter for this page)
-      // Limit to a reasonable number for now, pagination can be server-side later
       const data = await getDownloadedFiles(undefined, 0, 500); 
-      // Sort by downloaded_at descending
       data.sort((a, b) => parseISO(b.downloaded_at).getTime() - parseISO(a.downloaded_at).getTime());
       setFiles(data);
     } catch (err) {
@@ -79,9 +85,9 @@ export default function DownloadedFilesPage() {
 
   const handleDelete = async (id: string) => {
     const originalFile = files.find(item => item.id === id);
-    setFiles(prevData => prevData.filter(item => item.id !== id)); // Optimistic update
+    setFiles(prevData => prevData.filter(item => item.id !== id)); 
     try {
-      await deleteDownloadedFileRecord(id); // This calls the backend
+      await deleteDownloadedFileRecord(id); 
       toast({ title: "File Record Deleted", description: `Record for file ID ${id} has been removed from the database.` });
     } catch (err) {
       console.error("Failed to delete file record:", err);
@@ -133,6 +139,16 @@ export default function DownloadedFilesPage() {
     return ['all', ...Array.from(combinedTypes).sort()];
   }, [files]);
 
+  const summaryStats = useMemo(() => {
+    const totalRecords = filteredData.length;
+    const totalSize = filteredData.reduce((acc, file) => acc + (file.file_size_bytes || 0), 0);
+    return {
+      totalRecords,
+      totalSizeFormatted: formatBytes(totalSize),
+      uniqueTypesCount: uniqueFileTypes.length > 1 ? uniqueFileTypes.length -1 : 0, // -1 for 'all'
+    };
+  }, [filteredData, uniqueFileTypes]);
+
 
   if (isLoading && files.length === 0 && !error) {
     return (
@@ -163,6 +179,39 @@ export default function DownloadedFilesPage() {
 
   return (
     <AppShell>
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total File Records</CardTitle>
+            <Database className="h-5 w-5 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">{summaryStats.totalRecords}</div>
+            <p className="text-xs text-muted-foreground">records matching filters</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Storage Size</CardTitle>
+            <Save className="h-5 w-5 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">{summaryStats.totalSizeFormatted}</div>
+            <p className="text-xs text-muted-foreground">of all filtered files</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Unique File Types</CardTitle>
+            <Shapes className="h-5 w-5 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">{summaryStats.uniqueTypesCount}</div>
+            <p className="text-xs text-muted-foreground">distinct types recorded</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card className="shadow-xl">
         <CardHeader>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -182,8 +231,8 @@ export default function DownloadedFilesPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
-            <div className="relative col-span-1 sm:col-span-2 lg:col-span-1">
+          <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+            <div className="relative col-span-1 sm:col-span-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
               <Input
                 type="search"
@@ -199,6 +248,7 @@ export default function DownloadedFilesPage() {
             
             <Select value={filterFileType} onValueChange={(value) => { setFilterFileType(value); setCurrentPage(1); }}>
               <SelectTrigger className="w-full">
+                <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
                 <SelectValue placeholder="Filter by File Type" />
               </SelectTrigger>
               <SelectContent>
@@ -212,25 +262,25 @@ export default function DownloadedFilesPage() {
           </div>
 
           {paginatedData.length === 0 && !isLoading ? (
-            <div className="text-center py-10">
-              <FileQuestion className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+            <div className="text-center py-10 min-h-[300px] flex flex-col justify-center items-center">
+              <FileQuestion className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
               <p className="text-xl font-semibold">No Downloaded File Records Found.</p>
               <p className="text-muted-foreground">
                 {files.length > 0 ? "Try adjusting your search or filter criteria." : "No file records found in the backend database."}
               </p>
                {files.length === 0 && !error && (
-                <Button onClick={handleRefresh} disabled={isRefreshing || isLoading} className="mt-4">
+                <Button onClick={handleRefresh} disabled={isRefreshing || isLoading} className="mt-6">
                     <RefreshCcw className={`mr-2 h-4 w-4 ${isRefreshing || isLoading ? 'animate-spin' : ''}`} />
                     Check for New Data
                 </Button>
               )}
             </div>
           ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[50px]"></TableHead>
+                  <TableHead className="w-[50px] text-center"></TableHead>
                   <TableHead>File URL (Original)</TableHead>
                   <TableHead>File Type</TableHead>
                   <TableHead>Original Source URL</TableHead>
@@ -245,7 +295,7 @@ export default function DownloadedFilesPage() {
               <TableBody>
                 {paginatedData.map((item) => (
                   <TableRow key={item.id} className="hover:bg-muted/50">
-                    <TableCell>
+                    <TableCell className="text-center">
                       <FileTypeIcon fileTypeOrExt={item.file_type || ""} />
                     </TableCell>
                      <TableCell className="max-w-xs truncate">
@@ -256,7 +306,7 @@ export default function DownloadedFilesPage() {
                               {item.file_url.split('/').pop() || item.file_url}
                             </a>
                           </TooltipTrigger>
-                          <TooltipContent side="bottom">
+                          <TooltipContent side="bottom" className="max-w-md">
                             <p>{item.file_url}</p>
                           </TooltipContent>
                         </Tooltip>
@@ -273,7 +323,7 @@ export default function DownloadedFilesPage() {
                               {item.source_url}
                             </a>
                           </TooltipTrigger>
-                          <TooltipContent side="bottom">
+                          <TooltipContent side="bottom" className="max-w-md">
                             <p>Original Source: {item.source_url}</p>
                           </TooltipContent>
                         </Tooltip>
@@ -283,8 +333,21 @@ export default function DownloadedFilesPage() {
                     <TableCell>{format(parseISO(item.downloaded_at), 'MMM dd, yy HH:mm')}</TableCell>
                     <TableCell className="max-w-sm">
                       <div className="flex flex-wrap gap-1">
-                        {item.keywords_found?.slice(0,3).map(kw => <Badge key={kw} variant="outline">{kw}</Badge>)}
-                        {item.keywords_found && item.keywords_found.length > 3 && <Badge variant="outline">+{item.keywords_found.length - 3} more</Badge>}
+                        {item.keywords_found?.slice(0, 3).map(kw => <Badge key={kw} variant="outline" className="truncate max-w-[100px]">{kw}</Badge>)}
+                        {item.keywords_found && item.keywords_found.length > 3 && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge variant="outline" className="cursor-help">+{item.keywords_found.length - 3} more</Badge>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-xs">
+                                <p className="text-sm text-popover-foreground">
+                                  Additional keywords: {item.keywords_found.slice(3).join(', ')}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                          {(!item.keywords_found || item.keywords_found.length === 0) && <Badge variant="outline">N/A</Badge>}
                       </div>
                     </TableCell>
@@ -292,16 +355,16 @@ export default function DownloadedFilesPage() {
                         <TooltipProvider>
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <span>{item.local_path || 'N/A'}</span>
+                                    <span className="text-xs">{item.local_path || 'N/A'}</span>
                                 </TooltipTrigger>
-                                <TooltipContent side="bottom">
+                                <TooltipContent side="bottom" className="max-w-md">
                                     <p>{item.local_path || 'Not available'}</p>
                                 </TooltipContent>
                             </Tooltip>
                         </TooltipProvider>
                     </TableCell>
                     <TableCell>
-                        {item.file_size_bytes != null ? `${(item.file_size_bytes / (1024*1024)).toFixed(2)} MB` : 'N/A'}
+                        {item.file_size_bytes != null ? formatBytes(item.file_size_bytes) : 'N/A'}
                     </TableCell>
                     <TableCell className="text-right">
                       <TooltipProvider>
@@ -313,14 +376,6 @@ export default function DownloadedFilesPage() {
                           </TooltipTrigger>
                           <TooltipContent><p>Open Original File URL</p></TooltipContent>
                         </Tooltip>
-                        {/* <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" onClick={() => alert(`Details for ${item.file_url}:\nLocal Path: ${item.local_path}\nChecksum: ${item.checksum_md5}`)}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent><p>View Full Details</p></TooltipContent>
-                        </Tooltip> */}
                          <AlertDialog>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -363,7 +418,9 @@ export default function DownloadedFilesPage() {
                 variant="outline"
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
+                size="sm"
               >
+                <ChevronLeft className="mr-1 h-4 w-4" />
                 Previous
               </Button>
               <span className="text-sm text-muted-foreground">
@@ -373,8 +430,10 @@ export default function DownloadedFilesPage() {
                 variant="outline"
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
+                size="sm"
               >
                 Next
+                <ChevronRight className="ml-1 h-4 w-4" />
               </Button>
             </div>
           )}
@@ -383,3 +442,4 @@ export default function DownloadedFilesPage() {
     </AppShell>
   );
 }
+
