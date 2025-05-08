@@ -22,12 +22,17 @@ async function apiRequest<T>(
     },
   };
 
-  if (body) {
+  if (body && (method === 'POST' || method === 'PUT' || method === 'DELETE')) { // Ensure body is only added for relevant methods
     options.body = JSON.stringify(body);
   }
 
+  console.debug(`[API Request] ${method} ${url}`, body ? `with body: ${JSON.stringify(body)}` : ''); // Log request details
+
   try {
     const response = await fetch(url, options);
+
+    console.debug(`[API Response] ${method} ${url} - Status: ${response.status}`); // Log response status
+
     if (!response.ok) {
       let errorDetails = 'Unknown error';
       try {
@@ -43,23 +48,42 @@ async function apiRequest<T>(
       }
       console.error(`API Error: ${response.status} ${response.statusText} for ${method} ${url}`, errorDetails);
       // For 404 on GET preferences, we might want to return null instead of throwing an error.
-      if (method === 'GET' && response.status === 404 && path.includes('/preferences')) {
+      if (method === 'GET' && response.status === 404 && (path.includes('/preferences') || path.startsWith('/users/'))) {
+        console.warn(`API Info: Received 404 for ${method} ${url}, returning null.`);
         return null as T;
       }
       throw new Error(`API request failed: ${response.status} ${response.statusText}. Details: ${errorDetails}`);
     }
+    // Check for No Content response explicitly or zero content length
     if (response.status === 204 || response.headers.get('content-length') === '0') {
+        console.debug(`[API Response] ${method} ${url} - Status 204 or 0 length, returning null.`);
         return null as T;
     }
-    return response.json() as Promise<T>;
+
+    // Attempt to parse JSON response
+    try {
+        const data = await response.json();
+        console.debug(`[API Response Data] ${method} ${url}`, data); // Log successful data
+        return data as T;
+    } catch (jsonError) {
+        console.error(`API Error: Failed to parse JSON response from ${url}`, jsonError);
+        throw new Error(`Failed to parse JSON response from server. Status: ${response.status}`);
+    }
+
   } catch (error: unknown) {
     console.error(`Network or other error during API request to ${url}:`, error);
     // Check if it's a fetch-related TypeError (often wraps NetworkError)
-    if (error instanceof TypeError && error.message === 'Failed to fetch') {
-         throw new Error(`Network Error: Failed to connect to the backend at ${url}. Please ensure the backend service is running and reachable.`);
+    if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
+         const networkError = new Error(`Network Error: Failed to connect to the backend at ${url}. Please ensure the backend service is running and reachable.`);
+         (networkError as any).cause = error; // Preserve original error cause if possible
+         throw networkError;
     }
     // Re-throw other errors
-    throw error;
+    if (error instanceof Error) {
+        throw error; // Re-throw known Error types
+    } else {
+         throw new Error(`An unexpected error occurred during the API request: ${String(error)}`); // Wrap unknown errors
+    }
   }
 }
 
@@ -106,6 +130,9 @@ export const stopCrawlJob = async (jobId: string): Promise<MessageResponse> => {
 };
 
 export const deleteCrawlJob = async (jobId: string): Promise<void> => {
+  // Note: DELETE might not need a body, depending on backend implementation.
+  // If the backend requires a body for DELETE (e.g., for options), pass it.
+  // Assuming no body needed for DELETE job itself based on common practices.
   return apiRequest<void>(`/crawl/jobs/${jobId}`, 'DELETE');
 };
 
@@ -125,7 +152,7 @@ export const getDownloadedFiles = async (jobId?: string, skip: number = 0, limit
 };
 
 export const deleteDownloadedFileRecord = async (fileId: string, deletePhysical: boolean = false): Promise<void> => {
-   // Backend expects delete_physical in the body
+   // Backend expects delete_physical in the body for DELETE request on this specific endpoint
   return apiRequest<void>(`/crawl/results/downloaded/${fileId}`, 'DELETE', { delete_physical: deletePhysical });
 };
 
@@ -146,8 +173,8 @@ export const getUsers = async (skip: number = 0, limit: number = 100): Promise<U
   return apiRequest<User[]>(`/users?skip=${skip}&limit=${limit}`);
 };
 
-export const getUser = async (userId: string): Promise<User> => {
-  return apiRequest<User>(`/users/${userId}`);
+export const getUser = async (userId: string): Promise<User | null> => { // Allow null if user not found
+  return apiRequest<User | null>(`/users/${userId}`);
 };
 
 export const updateUserStatus = async (userId: string, payload: UserStatusUpdate): Promise<User> => {
@@ -163,8 +190,13 @@ export const deleteUser = async (userId: string): Promise<void> => {
 };
 
 // --- Password Change Endpoint ---
-export const changePassword = async (userId: string, payload: PasswordChangePayload ): Promise<MessageResponse> => {
-  // The payload already matches the backend schema (current_password, new_password)
+// The backend expects a specific payload shape defined in its schemas.PasswordChangeSchema
+// which typically includes current_password and new_password.
+export const changePassword = async (userId: string, currentPassword: string, newPassword: string): Promise<MessageResponse> => {
+  const payload: PasswordChangePayload = {
+    current_password: currentPassword,
+    new_password: newPassword,
+  };
   return apiRequest<MessageResponse>(`/users/${userId}/password`, 'PUT', payload);
 };
 
@@ -192,9 +224,20 @@ export const parseSettingsForBackend = (settings: SettingsFormData): BackendCraw
     let runAtISO: string | null = null;
     if (type === 'one-time' && runAtDate && runAtTime) {
         try {
-            // Combine date and time, assume local timezone if none specified, then convert to UTC ISO string
-            // TODO: Backend should ideally handle timezone conversion based on provided `timezone` field
-            runAtISO = new Date(`${runAtDate}T${runAtTime}:00`).toISOString();
+            // Combine date and time. Crucially, DO NOT assume local timezone here.
+            // The backend should interpret this based on the provided `timezone` field.
+            // Send the date and time components as they are, or construct an ISO string *without* timezone offset
+            // if the backend expects UTC or will handle the conversion using the timezone field.
+            // A common approach is to construct the ISO string assuming it's in the target timezone,
+            // but let the backend confirm/convert. Let's try constructing without explicit offset.
+            const combinedDateTimeString = `${runAtDate}T${runAtTime}:00`; // Example: "2024-08-15T14:30:00"
+            // If we know the timezone, we *could* try to get an ISO string with offset, but it's complex in JS.
+            // Sending the combined string might be safer if the backend handles timezone parsing.
+            // Let's default to ISO string assuming UTC for now, but highlight backend dependency.
+            runAtISO = new Date(`${combinedDateTimeString}Z`).toISOString(); // Appends Z for UTC assumption
+            // **Important**: The backend *must* correctly interpret this, potentially using the `timezone` field
+            // to adjust if the user intended a different timezone.
+
         } catch (e) {
             console.error("Error constructing date from parts:", e);
         }
@@ -207,8 +250,8 @@ export const parseSettingsForBackend = (settings: SettingsFormData): BackendCraw
     if (isValidRecurring || isValidOneTime) {
          schedule = {
             type: type,
-            cronExpression: isValidRecurring ? cronExpression : null,
-            runAt: isValidOneTime ? runAtISO : null,
+            cron_expression: isValidRecurring ? cronExpression : null, // Match backend field name
+            run_at: isValidOneTime ? runAtISO : null,                  // Match backend field name
             timezone: timezone,
         };
     } else {
@@ -232,4 +275,3 @@ export const parseSettingsForBackend = (settings: SettingsFormData): BackendCraw
     schedule: schedule,
   };
 };
-

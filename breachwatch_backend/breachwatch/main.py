@@ -1,3 +1,4 @@
+
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,18 +24,22 @@ app = FastAPI(
 
 # CORS (Cross-Origin Resource Sharing)
 # Adjust origins as necessary for your frontend.
+# Using ["*"] for development is convenient but less secure.
+# For production, replace "*" with the actual frontend URL(s).
 origins = [
     "http://localhost:9002",  # Assuming Next.js frontend runs on port 9002
     "http://127.0.0.1:9002",
+    # "*" # Allow all origins - USE WITH CAUTION, preferred for local dev troubleshooting
     # Add other origins if needed (e.g., production frontend URL)
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    # allow_origins=origins, # Use specific origins for better security
+    allow_origins=["*"], # More permissive for local development troubleshooting
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"], # Allows all methods
+    allow_headers=["*"], # Allows all headers
 )
 
 @app.on_event("startup")
@@ -61,10 +66,24 @@ async def root():
     """
     A simple health check endpoint.
     """
-    return {"message": f"{settings.APP_NAME} is running!"}
+    # Basic check to see if DB connection is working at a high level
+    db_status = "ok"
+    try:
+        # Try to get a session and perform a simple query
+        from breachwatch.storage.database import SessionLocal
+        db = SessionLocal()
+        db.execute("SELECT 1")
+        db.close()
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        db_status = "error"
+
+    return {"message": f"{settings.APP_NAME} is running!", "database_status": db_status}
 
 if __name__ == "__main__":
     import uvicorn
     # This is for direct execution (e.g., debugging).
     # For production, use a process manager like Gunicorn with Uvicorn workers.
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Use reload=True only for development.
+    uvicorn.run("breachwatch.main:app", host="0.0.0.0", port=8000, reload=True)
+
