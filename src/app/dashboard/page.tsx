@@ -23,7 +23,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"; // AlertDialogTrigger removed from here as it's part of Button now
+  AlertDialogTrigger, // Added AlertDialogTrigger import
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { getDownloadedFiles, deleteDownloadedFileRecord } from '@/services/breachwatch-api';
 import { FILE_TYPE_EXTENSIONS } from '@/lib/constants';
@@ -107,9 +108,11 @@ export default function DashboardPage() {
       .filter(item => {
         const searchTermLower = searchTerm.toLowerCase();
         const keywordsMatch = item.keywords_found?.some(kw => kw.toLowerCase().includes(searchTermLower));
+        const sourceUrlMatch = item.source_url?.toLowerCase().includes(searchTermLower);
+        const fileUrlMatch = item.file_url?.toLowerCase().includes(searchTermLower);
         return (
-          item.source_url.toLowerCase().includes(searchTermLower) ||
-          item.file_url.toLowerCase().includes(searchTermLower) ||
+          sourceUrlMatch ||
+          fileUrlMatch ||
           keywordsMatch
         );
       })
@@ -125,7 +128,7 @@ export default function DashboardPage() {
   const uniqueFileTypes = useMemo(() => {
     const types = new Set(downloadedFiles.map(item => item.file_type).filter(Boolean) as string[]);
     const allKnownTypes = Object.values(FILE_TYPE_EXTENSIONS).flat();
-    const combinedTypes = new Set([...Array.from(types), ...allKnownTypes.filter(t => !types.has(t) && downloadedFiles.some(df => df.file_type.includes(t)))]);
+    const combinedTypes = new Set([...Array.from(types), ...allKnownTypes.filter(t => !types.has(t) && downloadedFiles.some(df => df.file_type && df.file_type.includes(t)))]);
     return ['all', ...Array.from(combinedTypes).sort()];
   }, [downloadedFiles]);
 
@@ -246,7 +249,7 @@ export default function DashboardPage() {
                 {paginatedData.map((item) => (
                   <TableRow key={item.id} className="hover:bg-muted/50">
                     <TableCell>
-                      <FileTypeIcon fileTypeOrExt={item.file_type} />
+                      <FileTypeIcon fileTypeOrExt={item.file_type || ""} />
                     </TableCell>
                     <TableCell className="max-w-xs truncate">
                        <TooltipProvider>
@@ -312,9 +315,11 @@ export default function DashboardPage() {
                          <AlertDialog>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                               <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/80 hover:bg-destructive/10">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                               <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/80 hover:bg-destructive/10">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
                             </TooltipTrigger>
                             <TooltipContent><p>Delete Record</p></TooltipContent>
                           </Tooltip>
