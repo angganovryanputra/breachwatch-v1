@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 7, "column": 0}, "map": {"version":3,"sources":["file:///home/user/studio/src/app/page.tsx"],"sourcesContent":["'use client';\nimport { useEffect } from 'react';\nimport { useRouter } from 'next/navigation';\n\nexport default function HomePage() {\n  const router = useRouter();\n\n  useEffect(() => {\n    router.replace('/dashboard');\n  }, [router]);\n\n  return null; // Or a loading spinner\n}\n"],"names":[],"mappings":";;;AACA;AACA;AAFA;;;AAIe,SAAS;IACtB,MAAM,SAAS,CAAA,GAAA,kIAAA,CAAA,YAAS,AAAD;IAEvB,CAAA,GAAA,qMAAA,CAAA,YAAS,AAAD,EAAE;QACR,OAAO,OAAO,CAAC;IACjB,GAAG;QAAC;KAAO;IAEX,OAAO,MAAM,uBAAuB;AACtC","debugId":null}}]
+}
