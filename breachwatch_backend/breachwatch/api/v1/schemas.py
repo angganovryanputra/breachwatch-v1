@@ -1,3 +1,4 @@
+
 from pydantic import BaseModel, HttpUrl, Field, field_validator, EmailStr
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -13,12 +14,11 @@ class ScheduleSchema(BaseModel):
     @field_validator('cron_expression')
     @classmethod
     def validate_cron_expression(cls, value: Optional[str], values: Any) -> Optional[str]:
-        data = values.data # Access the model's data
+        data = values.data 
         if data.get('type') == 'recurring' and not value:
             raise ValueError("cron_expression is required for recurring schedules")
         if data.get('type') == 'one-time' and value:
             raise ValueError("cron_expression should not be set for one-time schedules")
-        # TODO: Add more sophisticated cron validation if needed
         return value
 
     @field_validator('run_at')
@@ -34,27 +34,24 @@ class ScheduleSchema(BaseModel):
     @field_validator('timezone')
     @classmethod
     def validate_timezone(cls, value: Optional[str], values: Any) -> Optional[str]:
-        # Could add validation against a list of known timezones if necessary
-        # from zoneinfo import available_timezones # Python 3.9+
-        # if value and value not in available_timezones():
-        #     raise ValueError(f"Invalid timezone: {value}")
         return value
 
 
 # --- Settings Schemas ---
 class CrawlSettingsSchema(BaseModel):
-    keywords: List[str] = Field(..., example=["password", "NIK", "confidential"])
-    file_extensions: List[str] = Field(..., example=[".txt", ".sql", ".zip"])
-    seed_urls: List[str] = Field(..., example=["https://example.com/forum", "https://pastebin.com"]) # Changed to List[str]
-    search_dorks: List[str] = Field(..., example=['filetype:sql "passwords"', 'intitle:"index of" "backup"'])
+    keywords: List[str] = Field(default_factory=list, example=["password", "NIK", "confidential"])
+    file_extensions: List[str] = Field(default_factory=list, example=[".txt", ".sql", ".zip"])
+    seed_urls: List[str] = Field(default_factory=list, example=["https://example.com/forum", "https://pastebin.com"])
+    search_dorks: List[str] = Field(default_factory=list, example=['filetype:sql "passwords"', 'intitle:"index of" "backup"'])
     crawl_depth: int = Field(default=2, ge=0, le=10)
     respect_robots_txt: bool = True
-    request_delay_seconds: float = Field(default=1.0, ge=0, le=30) # Max delay up to 30s
+    request_delay_seconds: float = Field(default=1.0, ge=0, le=60) # Max delay up to 60s
     use_search_engines: bool = True 
     max_results_per_dork: Optional[int] = Field(default=20, ge=1, le=100)
     max_concurrent_requests_per_domain: Optional[int] = Field(default=2, ge=1, le=10)
     custom_user_agent: Optional[str] = Field(default=None, max_length=255)
     schedule: Optional[ScheduleSchema] = Field(default=None)
+    proxies: Optional[List[str]] = Field(default=None, description="List of proxy URLs (e.g., http://user:pass@host:port).")
 
 
 class GlobalSettingsSchema(CrawlSettingsSchema):
@@ -67,13 +64,30 @@ class CrawlJobCreateSchema(BaseModel):
 
 class CrawlJobSchema(CrawlJobCreateSchema):
     id: uuid.UUID
-    status: str = "pending" # e.g., pending, running, completed, failed, stopping, completed_empty, scheduled
+    status: str = "pending" 
     created_at: datetime
     updated_at: datetime
     results_summary: Optional[Dict[str, int]] = Field(default_factory=dict) 
     next_run_at: Optional[datetime] = None
     last_run_at: Optional[datetime] = None
 
+    # Expose settings fields directly for easier access if needed, mapping from model's settings_ fields
+    settings_keywords: List[str] = Field(default_factory=list)
+    settings_file_extensions: List[str] = Field(default_factory=list)
+    settings_seed_urls: List[str] = Field(default_factory=list)
+    settings_search_dorks: List[str] = Field(default_factory=list)
+    settings_crawl_depth: int
+    settings_respect_robots_txt: bool
+    settings_request_delay_seconds: float
+    settings_use_search_engines: bool
+    settings_max_results_per_dork: Optional[int] = None
+    settings_max_concurrent_requests_per_domain: Optional[int] = None
+    settings_custom_user_agent: Optional[str] = None
+    settings_schedule_type: Optional[str] = None
+    settings_schedule_cron_expression: Optional[str] = None
+    settings_schedule_run_at: Optional[datetime] = None
+    settings_schedule_timezone: Optional[str] = None
+    settings_proxies: Optional[List[str]] = None # Add proxies here
 
     class Config:
         from_attributes = True 
@@ -81,8 +95,8 @@ class CrawlJobSchema(CrawlJobCreateSchema):
 # --- Result Schemas ---
 class BreachDataSchema(BaseModel):
     id: uuid.UUID
-    source_url: str # Changed to str
-    file_url: str # Changed to str
+    source_url: str 
+    file_url: str 
     file_type: str
     date_found: datetime
     keywords_found: List[str]
@@ -105,7 +119,7 @@ class UserBaseSchema(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     is_active: bool = True
-    role: str = Field(default="user", pattern="^(user|admin)$") # Enforce specific roles
+    role: str = Field(default="user", pattern="^(user|admin)$")
 
 class UserCreateSchema(UserBaseSchema):
     password: str = Field(min_length=8)
@@ -122,7 +136,7 @@ class UserStatusUpdateSchema(BaseModel):
     is_active: bool
 
 class UserRoleUpdateSchema(BaseModel):
-    role: str = Field(..., pattern="^(user|admin)$") # Ensure role is valid
+    role: str = Field(..., pattern="^(user|admin)$")
 
 class PasswordChangeSchema(BaseModel):
     current_password: str
@@ -135,16 +149,14 @@ class TokenSchema(BaseModel):
 
 class TokenDataSchema(BaseModel):
     email: Optional[str] = None
-    user_id: Optional[uuid.UUID] = None # Store user ID in token data
+    user_id: Optional[uuid.UUID] = None 
 
 # --- User Preferences Schemas ---
 class UserPreferenceBaseSchema(BaseModel):
     default_items_per_page: int = Field(default=10, ge=5, le=100)
     receive_email_notifications: bool = True
-    # Add other preferences here
 
 class UserPreferenceUpdateSchema(UserPreferenceBaseSchema):
-    # Inherits fields from base, can add specific validation if needed
     pass
 
 class UserPreferenceSchema(UserPreferenceBaseSchema):
@@ -166,3 +178,4 @@ class PaginatedResponseSchema(BaseModel):
     size: int
     pages: int
 
+    

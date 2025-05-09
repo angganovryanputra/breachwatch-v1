@@ -26,6 +26,10 @@ class CrawlerSettings(BaseModel):
     default_delay_seconds: float = 1.0
     max_concurrent_requests_per_domain: int = 2
     max_crawl_depth: int = 3
+    # Global proxy list (can be overridden by job-specific settings)
+    default_proxy_list: Optional[List[str]] = Field(default_factory=lambda: os.getenv("DEFAULT_PROXY_LIST", "").split(',') if os.getenv("DEFAULT_PROXY_LIST") else None)
+    default_proxy_rotation_strategy: str = Field(default_factory=lambda: os.getenv("DEFAULT_PROXY_ROTATION_STRATEGY", "random"))
+
 
 class OutputLocationsSettings(BaseModel):
     downloaded_files: Path # Path will be resolved to absolute
@@ -76,8 +80,8 @@ class AppSettings(BaseModel):
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
     # Crawler & Network Defaults
-    DEFAULT_USER_AGENT: str = os.getenv("DEFAULT_USER_AGENT", "BreachWatchResearchBot/1.0")
-    REQUEST_TIMEOUT: int = int(os.getenv("REQUEST_TIMEOUT", 10)) # seconds
+    DEFAULT_USER_AGENT: str = os.getenv("DEFAULT_USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 Safari/537.36")
+    REQUEST_TIMEOUT: int = int(os.getenv("REQUEST_TIMEOUT", 20)) # Increased default timeout
 
     # JWT Authentication Settings
     SECRET_KEY: str = Field(default_factory=lambda: os.getenv("SECRET_KEY", secrets.token_hex(32)))
@@ -184,7 +188,7 @@ def get_settings() -> AppSettings:
         initial_data = {
             "APP_BASE_DIR": effective_app_base_dir, # Ensure base dir is set
             "CRAWLER": yaml_data.get("crawler", {}), # Pass nested dict or empty
-            "OUTPUT_LOCATIONS": yaml_data.get("output_locations", {"downloaded_files": "data/downloaded_files/fallback"}), # Pass nested dict or default fallback path string
+            "OUTPUT_LOCATIONS": yaml_data.get("output_locations", {"downloaded_files": "data/downloaded_files/fallback"}), # Pass nested dict or empty
              "TARGET_FILE_EXTENSIONS": yaml_data.get("target_file_extensions"), # Pass list or None
              "KEYWORDS_FOR_ANALYSIS": yaml_data.get("keywords_for_analysis"), # Pass list or None
              # Pass other top-level YAML fields if they exist
@@ -246,6 +250,8 @@ if __name__ == "__main__":
         print("Database URL: Not configured")
     print("Log Level:", settings.LOG_LEVEL)
     print("Crawler Settings Delay:", settings.CRAWLER.default_delay_seconds)
+    print("Default Proxy List:", settings.CRAWLER.default_proxy_list)
+    print("Default Proxy Rotation:", settings.CRAWLER.default_proxy_rotation_strategy)
     print("Downloaded Files Path:", settings.OUTPUT_LOCATIONS.downloaded_files)
     print("Target Extensions:", settings.TARGET_FILE_EXTENSIONS)
     print("App Base Dir used for settings:", settings.APP_BASE_DIR)
@@ -272,3 +278,5 @@ if __name__ == "__main__":
     print(f"Redis Port: {settings.REDIS_PORT}")
     print(f"Redis DB: {settings.REDIS_DB}")
     print(f"Redis Password Set: {'Yes' if settings.REDIS_PASSWORD else 'No'}")
+
+    

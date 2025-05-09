@@ -1,12 +1,9 @@
+
 # Default application configuration
 # This can be overridden by environment variables or other config files.
 
 app_name: "BreachWatch Backend"
 version: "0.1.0"
-
-# Search engine dorks and target extensions can be extensive and might be better managed
-# via the frontend settings and passed to the backend, or stored in the database.
-# For initial setup, some examples can be here.
 
 target_file_extensions:
   - ".txt"
@@ -18,24 +15,92 @@ target_file_extensions:
   - ".db"
   - ".bak"
   - ".log"
-  - ".config" # and many more from frontend
+  - ".config" 
+  - ".env"
+  - ".pem"
+  - ".key"
+  - ".crt"
+  - ".cer"
+  - ".p12"
+  - ".pfx"
+  - ".jks"
+  # More specific document types
+  - ".pdf"
+  - ".doc"
+  - ".docx"
+  - ".xls"
+  - ".xlsx"
+  - ".ppt"
+  - ".pptx"
+  # Web specific
+  - ".php"
+  - ".asp"
+  - ".aspx"
+  - ".jsp"
+  - ".cfm"
+  # Other potentially sensitive
+  - ".kdbx" # KeePass database
+  - ".rdp"  # Remote Desktop Connection
+  - ".ovpn" # OpenVPN config
 
 keywords_for_analysis:
   - "password"
   - "secret"
   - "api_key"
   - "credential"
-  - "NIK" # and many more from frontend
+  - "token"
+  - "auth_key"
+  - "private_key"
+  - "NIK" 
+  - "no_ktp"
+  - "nomor_ktp"
+  - "nama_lengkap"
+  - "tanggal_lahir"
+  - "alamat"
+  - "nomor_telepon"
+  - "nomor_hp"
+  - "email"
+  - "username"
+  - "kata_sandi"
+  - " Rahasia " # Note spaces for "Rahasia" as whole word
+  - "Sandi Transaksi"
+  - "PIN ATM"
+  - "Nomor Kartu Kredit"
+  - "CVV"
+  - "NPWP"
+  - "Nomor Rekening"
+  - "Gaji"
+  - "Slip Gaji"
+  - "Kontrak Kerja"
+  - "Surat Keputusan"
+  - "SK Pegawai"
 
-# Politeness settings for crawler
+
 crawler:
-  default_delay_seconds: 1.0 # Default delay between requests to the same domain
+  default_delay_seconds: 1.5 # Slightly increased default
   max_concurrent_requests_per_domain: 2
-  max_crawl_depth: 3 # Can be overridden by specific crawl jobs
+  max_crawl_depth: 3 
+  # Example global proxy list (if not set per job). Per-job settings will override these.
+  # Comma-separated if set via DEFAULT_PROXY_LIST env var.
+  # default_proxy_list: 
+  #   - "http://user1:pass1@proxy1.example.com:8080"
+  #   - "http://user2:pass2@proxy2.example.com:3128"
+  # default_proxy_rotation_strategy: "random" # "random" or "sequential"
 
 output_locations:
   downloaded_files: "data/downloaded_files" # Relative to backend root
-  metadata_db_path: "data/metadata_db/breachwatch_metadata.sqlite" # Example for SQLite, but we're using PostgreSQL
+  # metadata_db_path: "data/metadata_db/breachwatch_metadata.sqlite" # We use PostgreSQL now
 
 # Add other configurations as needed
-# e.g., API keys for external services, proxy settings
+# e.g., API keys for external services
+# Some search engines might require API keys for programmatic access
+
+# Global User-Agent (can be overridden by job custom_user_agent)
+# DEFAULT_USER_AGENT in .env takes precedence if set
+# default_user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 Safari/537.36"
+
+# Global Request Timeout (can be overridden or tuned in code)
+# REQUEST_TIMEOUT in .env takes precedence
+# request_timeout: 20 # seconds
+
+    

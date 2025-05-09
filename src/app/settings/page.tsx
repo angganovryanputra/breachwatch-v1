@@ -13,7 +13,7 @@ import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/hooks/use-toast';
 import { DEFAULT_SETTINGS } from '@/lib/constants';
 import type { SettingsFormData, ScheduleData } from '@/types';
-import { Save, RotateCcw, Settings as SettingsIcon, HelpCircle, AlertTriangle, CalendarClock, Repeat } from 'lucide-react';
+import { Save, RotateCcw, Settings as SettingsIcon, HelpCircle, AlertTriangle, CalendarClock, Repeat, Server } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -39,7 +39,7 @@ const settingsFormValidationSchema = z.object({
   seedUrls: z.string().min(1, { message: "Seed URLs are required." })
     .refine(value => {
       const urls = value.split('\n').map(url => url.trim()).filter(url => url);
-      if (urls.length === 0) return false; // Ensure at least one URL after filtering
+      if (urls.length === 0) return false; 
       try {
         return urls.every(url => new URL(url).protocol.startsWith('http'));
       } catch (e) {
@@ -49,14 +49,20 @@ const settingsFormValidationSchema = z.object({
   searchDorks: z.string().min(1, { message: "Search dorks are required." }),
   crawlDepth: z.number().min(0).max(10),
   respectRobotsTxt: z.boolean(),
-  requestDelay: z.number().min(0).max(30), // Increased max delay
+  requestDelay: z.number().min(0).max(60), 
   customUserAgent: z.string().optional(),
   maxResultsPerDork: z.number().min(1).max(100),
   maxConcurrentRequestsPerDomain: z.number().min(1).max(10),
+  proxies: z.string().optional().refine(value => { // Optional proxy list
+    if (!value || value.trim() === '') return true; // Allow empty
+    const proxyList = value.split('\n').map(p => p.trim()).filter(p => p);
+    // Basic validation for proxy format (can be enhanced)
+    return proxyList.every(p => /^(http|https|socks5):\/\/.+/.test(p) || /^[a-zA-Z0-9.-]+:[0-9]+$/.test(p) ); //scheme://host:port or host:port for http
+  }, { message: "Invalid proxy format. Expected format: scheme://[user:password@]host:port, one per line." }),
   scheduleEnabled: z.boolean(),
   scheduleType: z.enum(['one-time', 'recurring']),
-  scheduleCronExpression: z.string().optional(), // Validate further if recurring
-  scheduleRunAtDate: z.string().optional(), // Should be date string
+  scheduleCronExpression: z.string().optional(), 
+  scheduleRunAtDate: z.string().optional(), 
   scheduleRunAtTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "Invalid time format (HH:MM)" }).optional(),
   scheduleTimezone: z.string().optional(),
 }).refine(data => {
@@ -74,7 +80,7 @@ const settingsFormValidationSchema = z.object({
     return true;
 }, {
     message: "Date and Time are required for one-time schedules.",
-    path: ["scheduleRunAtDate"], // Or scheduleRunAtTime
+    path: ["scheduleRunAtDate"], 
 });
 
 
@@ -98,9 +104,7 @@ export default function SettingsPage() {
     if (storedSettings) {
       try {
         const parsedSettings = JSON.parse(storedSettings);
-        // Ensure date is correctly formatted for input type="date"
         if (parsedSettings.scheduleRunAtDate && typeof parsedSettings.scheduleRunAtDate === 'string') {
-            // Check if it's already in yyyy-MM-dd format, otherwise parse and reformat
             if (!/^\d{4}-\d{2}-\d{2}$/.test(parsedSettings.scheduleRunAtDate)) {
                  parsedSettings.scheduleRunAtDate = format(new Date(parsedSettings.scheduleRunAtDate), 'yyyy-MM-dd');
             }
@@ -114,7 +118,7 @@ export default function SettingsPage() {
         reset(DEFAULT_SETTINGS);
       }
     } else {
-        reset(DEFAULT_SETTINGS); // ensure defaults are set if nothing in localstorage
+        reset(DEFAULT_SETTINGS); 
     }
   }, [reset]);
 
@@ -123,7 +127,7 @@ export default function SettingsPage() {
     localStorage.removeItem('breachWatchSettings');
     const defaultsWithFormattedDate = {
         ...DEFAULT_SETTINGS,
-        scheduleRunAtDate: format(new Date(DEFAULT_SETTINGS.scheduleRunAtDate), 'yyyy-MM-dd')
+        scheduleRunAtDate: format(new Date(DEFAULT_SETTINGS.scheduleRunAtDate || new Date()), 'yyyy-MM-dd') // Handle undefined case for date
     };
     reset(defaultsWithFormattedDate);
     toast({
@@ -140,7 +144,7 @@ export default function SettingsPage() {
 
       const backendSettingsPayload = parseSettingsForBackend(values);
       const payload: CreateCrawlJobPayload = {
-        name: `Crawl Job - ${new Date().toLocaleString()}`, // TODO: Allow custom job names
+        name: `Crawl Job - ${new Date().toLocaleString()}`, 
         settings: backendSettingsPayload,
       };
       
@@ -164,7 +168,7 @@ export default function SettingsPage() {
   const timezones = useMemo(() => {
     try {
       return Intl.supportedValuesOf('timeZone');
-    } catch (e) { // Fallback for older environments
+    } catch (e) { 
       return [
         'UTC', 'GMT', 'America/New_York', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 
         'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Dubai', 'Asia/Jakarta', 'Australia/Sydney'
@@ -197,31 +201,26 @@ export default function SettingsPage() {
               </AlertDescription>
             </Alert>
             
-            {/* Basic Targeting */}
             <Card>
               <CardHeader><CardTitle className="text-lg">Targeting Parameters</CardTitle></CardHeader>
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Keywords */}
                   <div className="space-y-2">
                     <Label htmlFor="keywords" className="flex items-center">Keywords <TooltipProvider><Tooltip><TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" /></TooltipTrigger><TooltipContent side="top"><p className="max-w-xs">Comma or newline-separated keywords.</p></TooltipContent></Tooltip></TooltipProvider></Label>
                     <Controller name="keywords" control={control} render={({ field }) => (<Textarea id="keywords" placeholder="e.g., leak, dump, database, NIK" rows={4} className={`resize-y ${errors.keywords ? 'border-destructive' : ''}`} {...field} />)} />
                     {errors.keywords && <p className="text-sm text-destructive">{errors.keywords.message}</p>}
                   </div>
-                  {/* File Extensions */}
                   <div className="space-y-2">
                     <Label htmlFor="fileExtensions" className="flex items-center">File Extensions <TooltipProvider><Tooltip><TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" /></TooltipTrigger><TooltipContent side="top"><p className="max-w-xs">Comma or newline-separated, without dot. E.g., txt, csv, sql.</p></TooltipContent></Tooltip></TooltipProvider></Label>
                     <Controller name="fileExtensions" control={control} render={({ field }) => (<Textarea id="fileExtensions" placeholder="e.g., txt, csv, sql" rows={4} className={`resize-y ${errors.fileExtensions ? 'border-destructive' : ''}`} {...field} />)} />
                     {errors.fileExtensions && <p className="text-sm text-destructive">{errors.fileExtensions.message}</p>}
                   </div>
                 </div>
-                {/* Seed URLs */}
                 <div className="space-y-2">
                   <Label htmlFor="seedUrls" className="flex items-center">Seed URLs <TooltipProvider><Tooltip><TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" /></TooltipTrigger><TooltipContent side="top"><p className="max-w-xs">Starting URLs, one per line.</p></TooltipContent></Tooltip></TooltipProvider></Label>
                   <Controller name="seedUrls" control={control} render={({ field }) => (<Textarea id="seedUrls" placeholder="e.g., https://example.com (one URL per line)" rows={5} className={`resize-y ${errors.seedUrls ? 'border-destructive' : ''}`} {...field} />)} />
                   {errors.seedUrls && <p className="text-sm text-destructive">{errors.seedUrls.message}</p>}
                 </div>
-                {/* Search Dorks */}
                 <div className="space-y-2">
                   <Label htmlFor="searchDorks" className="flex items-center">Search Engine Dorks <TooltipProvider><Tooltip><TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" /></TooltipTrigger><TooltipContent side="top"><p className="max-w-xs">Advanced search queries, one per line.</p></TooltipContent></Tooltip></TooltipProvider></Label>
                   <Controller name="searchDorks" control={control} render={({ field }) => (<Textarea id="searchDorks" placeholder='e.g., filetype:csv "password" (one dork per line)' rows={5} className={`resize-y ${errors.searchDorks ? 'border-destructive' : ''}`} {...field} />)} />
@@ -230,43 +229,67 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
-            {/* Advanced Crawler Settings */}
             <Card>
               <CardHeader><CardTitle className="text-lg">Advanced Crawler Settings</CardTitle></CardHeader>
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                  {/* Crawl Depth */}
                   <div className="space-y-3">
                     <Label htmlFor="crawlDepth" className="flex items-center">Crawl Depth: {form.watch("crawlDepth")} <TooltipProvider><Tooltip><TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" /></TooltipTrigger><TooltipContent side="top"><p className="max-w-xs">How many links deep (0-10). 0 for seed URLs only.</p></TooltipContent></Tooltip></TooltipProvider></Label>
                     <Controller name="crawlDepth" control={control} render={({ field }) => (<Slider id="crawlDepth" min={0} max={10} step={1} onValueChange={(value) => field.onChange(value[0])} value={[field.value]} />)} />
                     {errors.crawlDepth && <p className="text-sm text-destructive">{errors.crawlDepth.message}</p>}
                   </div>
-                  {/* Request Delay */}
                   <div className="space-y-3">
-                    <Label htmlFor="requestDelay" className="flex items-center">Request Delay: {form.watch("requestDelay")}s <TooltipProvider><Tooltip><TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" /></TooltipTrigger><TooltipContent side="top"><p className="max-w-xs">Delay between requests per domain (0-30s).</p></TooltipContent></Tooltip></TooltipProvider></Label>
-                    <Controller name="requestDelay" control={control} render={({ field }) => (<Slider id="requestDelay" min={0} max={30} step={0.5} onValueChange={(value) => field.onChange(value[0])} value={[field.value]} />)} />
+                    <Label htmlFor="requestDelay" className="flex items-center">Request Delay: {form.watch("requestDelay")}s <TooltipProvider><Tooltip><TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" /></TooltipTrigger><TooltipContent side="top"><p className="max-w-xs">Delay between requests per domain (0-60s).</p></TooltipContent></Tooltip></TooltipProvider></Label>
+                    <Controller name="requestDelay" control={control} render={({ field }) => (<Slider id="requestDelay" min={0} max={60} step={0.5} onValueChange={(value) => field.onChange(value[0])} value={[field.value]} />)} />
                     {errors.requestDelay && <p className="text-sm text-destructive">{errors.requestDelay.message}</p>}
                   </div>
-                  {/* Max Results Per Dork */}
                    <div className="space-y-3">
                     <Label htmlFor="maxResultsPerDork" className="flex items-center">Max Results Per Dork: {form.watch("maxResultsPerDork")} <TooltipProvider><Tooltip><TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" /></TooltipTrigger><TooltipContent side="top"><p className="max-w-xs">Max results from search engine per dork (1-100).</p></TooltipContent></Tooltip></TooltipProvider></Label>
-                    <Controller name="maxResultsPerDork" control={control} render={({ field }) => (<Slider id="maxResultsPerDork" min={1} max={100} step={1} onValueChange={(value) => field.onChange(value[0])} value={[field.value]} />)} />
+                    <Controller name="maxResultsPerDork" control={control} render={({ field }) => (<Slider id="maxResultsPerDork" min={1} max={100} step={1} onValueChange={(value) => field.onChange(value[0])} value={[field.value ?? 20]} />)} />
                     {errors.maxResultsPerDork && <p className="text-sm text-destructive">{errors.maxResultsPerDork.message}</p>}
                   </div>
-                  {/* Max Concurrent Requests Per Domain */}
                   <div className="space-y-3">
                     <Label htmlFor="maxConcurrentRequestsPerDomain" className="flex items-center">Max Concurrent Requests/Domain: {form.watch("maxConcurrentRequestsPerDomain")} <TooltipProvider><Tooltip><TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" /></TooltipTrigger><TooltipContent side="top"><p className="max-w-xs">Max parallel requests to a single domain (1-10).</p></TooltipContent></Tooltip></TooltipProvider></Label>
-                    <Controller name="maxConcurrentRequestsPerDomain" control={control} render={({ field }) => (<Slider id="maxConcurrentRequestsPerDomain" min={1} max={10} step={1} onValueChange={(value) => field.onChange(value[0])} value={[field.value]} />)} />
+                    <Controller name="maxConcurrentRequestsPerDomain" control={control} render={({ field }) => (<Slider id="maxConcurrentRequestsPerDomain" min={1} max={10} step={1} onValueChange={(value) => field.onChange(value[0])} value={[field.value ?? 2]} />)} />
                     {errors.maxConcurrentRequestsPerDomain && <p className="text-sm text-destructive">{errors.maxConcurrentRequestsPerDomain.message}</p>}
                   </div>
                 </div>
-                {/* Custom User Agent */}
                 <div className="space-y-2">
                   <Label htmlFor="customUserAgent" className="flex items-center">Custom User Agent (Optional) <TooltipProvider><Tooltip><TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" /></TooltipTrigger><TooltipContent side="top"><p className="max-w-xs">Leave blank to use default. Provide a specific User-Agent string.</p></TooltipContent></Tooltip></TooltipProvider></Label>
                   <Controller name="customUserAgent" control={control} render={({ field }) => (<Input id="customUserAgent" placeholder="e.g., Mozilla/5.0 (Windows NT 10.0; Win64; x64)..." className={`${errors.customUserAgent ? 'border-destructive' : ''}`} {...field} value={field.value ?? ''} />)} />
                   {errors.customUserAgent && <p className="text-sm text-destructive">{errors.customUserAgent.message}</p>}
                 </div>
-                {/* Respect robots.txt Switch */}
+                 {/* Proxy List Input */}
+                <div className="space-y-2">
+                    <Label htmlFor="proxies" className="flex items-center">
+                        Proxy List (Optional) <Server className="h-4 w-4 ml-1.5 text-muted-foreground" />
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" /></TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-md">
+                                    <p>Enter proxy URLs, one per line. Format: `scheme://[user:password@]host:port`.</p>
+                                    <p>Examples: `http://proxy.example.com:8080`, `https://user:pass@secureproxy.net:443`, `socks5://localhost:1080`</p>
+                                    <p>If provided, the crawler will randomly rotate through these proxies for requests.</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    </Label>
+                    <Controller
+                        name="proxies"
+                        control={control}
+                        render={({ field }) => (
+                            <Textarea
+                                id="proxies"
+                                placeholder="e.g., http://proxy.example.com:8080 (one proxy per line)"
+                                rows={4}
+                                className={`resize-y ${errors.proxies ? 'border-destructive' : ''}`}
+                                {...field}
+                                value={field.value ?? ''}
+                            />
+                        )}
+                    />
+                    {errors.proxies && <p className="text-sm text-destructive">{errors.proxies.message}</p>}
+                </div>
                 <div className="flex items-center space-x-3 pt-2">
                   <Controller name="respectRobotsTxt" control={control} render={({ field }) => (<Switch id="respectRobotsTxt" checked={field.value} onCheckedChange={field.onChange} />)} />
                   <Label htmlFor="respectRobotsTxt" className="flex items-center">Respect robots.txt <TooltipProvider><Tooltip><TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-1.5 text-muted-foreground cursor-help" /></TooltipTrigger><TooltipContent side="top"><p className="max-w-xs">Attempt to follow rules in robots.txt. Disabling may be impolite or violate ToS.</p></TooltipContent></Tooltip></TooltipProvider></Label>
@@ -274,7 +297,6 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
-            {/* Scheduling Settings */}
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -406,3 +428,5 @@ export default function SettingsPage() {
     </AppShell>
   );
 }
+
+    
