@@ -13,8 +13,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Users, MoreHorizontal, ShieldCheck, UserCog, UserX, UserCheck, Trash2, Ban, Loader2 } from 'lucide-react';
 import type { User, UserRole } from '@/types';
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from '@/context/auth-context'; // Import useAuth
-import { getUsers, updateUserStatus, updateUserRole, deleteUser } from '@/services/breachwatch-api'; // Import user management API functions
+import { useAuth } from '@/context/auth-context';
+import { getUsers, updateUserStatus, updateUserRole, deleteUser } from '@/services/breachwatch-api';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,9 +29,9 @@ import {
 export default function UserManagementPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isUpdating, setIsUpdating] = useState<Record<string, boolean>>({}); // Track loading state per user action
+  const [isUpdating, setIsUpdating] = useState<Record<string, boolean>>({});
   const { toast } = useToast();
-  const { user: loggedInUser } = useAuth(); // Get logged-in user info for checks
+  const { user: loggedInUser, isLoading: authIsLoading } = useAuth();
 
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
@@ -51,13 +51,14 @@ export default function UserManagementPage() {
   }, [toast]);
 
   useEffect(() => {
-    // Ensure only admins can access this page (handled by AppShell, but double-check)
-    if (loggedInUser?.role !== 'admin') {
-      // Redirect logic is in AppShell, can add fallback here if needed
+    if (!authIsLoading && loggedInUser?.role !== 'admin') {
+      // Redirect logic is in AppShell, this is an additional safeguard
       return;
     }
-    fetchUsers();
-  }, [loggedInUser, fetchUsers]);
+    if (!authIsLoading && loggedInUser?.role === 'admin') {
+        fetchUsers();
+    }
+  }, [loggedInUser, authIsLoading, fetchUsers]);
 
   const handleAction = async (userId: string, action: 'enable' | 'disable' | 'delete' | 'changeRole', payload?: any) => {
      if (userId === loggedInUser?.id && (action === 'disable' || action === 'delete' || (action === 'changeRole' && payload !== 'admin'))) {
@@ -72,45 +73,66 @@ export default function UserManagementPage() {
     switch (action) {
       case 'enable':
         actionFunc = updateUserStatus(userId, { is_active: true });
-        successMessage = `User ${userId} enabled successfully.`;
+        successMessage = `User enabled successfully.`;
         break;
       case 'disable':
         actionFunc = updateUserStatus(userId, { is_active: false });
-        successMessage = `User ${userId} disabled successfully.`;
+        successMessage = `User disabled successfully.`;
         break;
       case 'delete':
         actionFunc = deleteUser(userId);
-        successMessage = `User ${userId} deleted successfully.`;
+        successMessage = `User deleted successfully.`;
         break;
        case 'changeRole':
          actionFunc = updateUserRole(userId, { role: payload as UserRole });
-         successMessage = `User ${userId}'s role updated to ${payload}.`;
+         successMessage = `User's role updated to ${payload}.`;
          break;
       default:
         setIsUpdating(prev => ({ ...prev, [userId]: false }));
-        return; // Should not happen
+        return; 
     }
 
     try {
       await actionFunc;
       toast({ title: "Success", description: successMessage });
-      // Refetch users or update state optimistically
       if (action === 'delete') {
         setUsers(prevUsers => prevUsers.filter(user => user.id !== userId));
       } else {
-        fetchUsers(); // Refetch for role/status changes
+        fetchUsers(); 
       }
     } catch (error) {
       console.error(`Failed to ${action} user ${userId}:`, error);
       toast({
         title: `Error ${action.charAt(0).toUpperCase() + action.slice(1)} User`,
-        description: error instanceof Error ? error.message : `Could not perform action on user ${userId}.`,
+        description: error instanceof Error ? error.message : `Could not perform action on user.`,
         variant: "destructive",
       });
     } finally {
       setIsUpdating(prev => ({ ...prev, [userId]: false }));
     }
   };
+
+  if (authIsLoading || (isLoading && users.length === 0)) {
+     return (
+        <AppShell>
+            <div className="flex items-center justify-center h-full">
+                <Loader2 className="h-8 w-8 animate-spin text-accent" />
+                <p className="ml-2">Loading user management...</p>
+            </div>
+        </AppShell>
+     );
+  }
+
+  if (loggedInUser?.role !== 'admin') {
+      return (
+        <AppShell>
+            <div className="text-center py-10">
+                <p className="text-xl font-semibold text-destructive">Access Denied</p>
+                <p className="text-muted-foreground">You do not have permission to view this page.</p>
+            </div>
+        </AppShell>
+      );
+  }
 
 
   return (
@@ -127,11 +149,10 @@ export default function UserManagementPage() {
                 View and manage user roles and statuses within the application.
               </CardDescription>
             </div>
-            {/* Add Button for inviting/adding new users could go here */}
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isLoading && users.length === 0 ? ( // Show loading only if truly loading initial data
             <div className="text-center py-10 flex items-center justify-center">
               <Loader2 className="h-6 w-6 mr-2 animate-spin"/> Loading users...
             </div>
@@ -139,14 +160,13 @@ export default function UserManagementPage() {
             <div className="text-center py-10 min-h-[300px] flex flex-col justify-center items-center">
               <Users className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
               <p className="text-xl font-semibold">No Users Found.</p>
-              {/* Add invite/add user button here */}
             </div>
           ) : (
             <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[80px]"></TableHead>{/* Avatar */}
+                    <TableHead className="w-[80px]"></TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Role</TableHead>
@@ -159,13 +179,13 @@ export default function UserManagementPage() {
                     <TableRow key={user.id} className={`hover:bg-muted/50 ${!user.is_active ? 'opacity-60' : ''}`}>
                       <TableCell>
                         <Avatar className="h-9 w-9">
-                          <AvatarImage src={user.avatarUrl || undefined} alt={user.name || user.email} data-ai-hint="person avatar" />
+                          <AvatarImage src={user.avatarUrl || undefined} alt={user.full_name || user.email} data-ai-hint="person avatar" />
                           <AvatarFallback className="bg-muted text-muted-foreground text-xs">
-                            {user.name ? user.name.split(' ').map(n => n[0]).join('') : user.email[0].toUpperCase()}
+                            {user.full_name ? user.full_name.split(' ').map(n => n[0]).join('') : user.email[0].toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
                       </TableCell>
-                      <TableCell className="font-medium">{user.name || <span className="text-muted-foreground italic">No Name</span>}</TableCell>
+                      <TableCell className="font-medium">{user.full_name || <span className="text-muted-foreground italic">No Name</span>}</TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>
                          <Badge variant={user.role === 'admin' ? 'destructive' : 'secondary'} className="capitalize flex items-center gap-1 w-fit">
@@ -200,41 +220,37 @@ export default function UserManagementPage() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Manage User</DropdownMenuLabel>
                             <DropdownMenuSeparator />
-                            {/* Change Role */}
                              <DropdownMenuLabel className="text-xs px-2 pt-2">Change Role</DropdownMenuLabel>
                              <DropdownMenuRadioGroup 
                                 value={user.role} 
                                 onValueChange={(newRole) => handleAction(user.id, 'changeRole', newRole as UserRole)}
-                                // Disable changing own role if admin
-                                disabled={user.id === loggedInUser?.id && user.role === 'admin'} 
+                                disabled={(user.id === loggedInUser?.id && user.role === 'admin') || isUpdating[user.id]} 
                             >
                                 <DropdownMenuRadioItem value="user">User</DropdownMenuRadioItem>
                                 <DropdownMenuRadioItem value="admin">Admin</DropdownMenuRadioItem>
                             </DropdownMenuRadioGroup>
                             
                             <DropdownMenuSeparator />
-                            {/* Enable/Disable User */}
                             {user.is_active ? (
                               <DropdownMenuItem 
                                 onClick={() => handleAction(user.id, 'disable')} 
-                                disabled={user.id === loggedInUser?.id} // Prevent disabling self
+                                disabled={user.id === loggedInUser?.id || isUpdating[user.id]}
                                 className="text-orange-600 focus:bg-orange-100 focus:text-orange-700"
                               >
                                 <Ban className="mr-2 h-4 w-4" /> Disable User
                               </DropdownMenuItem>
                             ) : (
-                              <DropdownMenuItem onClick={() => handleAction(user.id, 'enable')} className="text-green-600 focus:bg-green-100 focus:text-green-700">
+                              <DropdownMenuItem onClick={() => handleAction(user.id, 'enable')} disabled={isUpdating[user.id]} className="text-green-600 focus:bg-green-100 focus:text-green-700">
                                 <UserCheck className="mr-2 h-4 w-4" /> Enable User
                               </DropdownMenuItem>
                             )}
                             
-                            {/* Delete User */}
                              <DropdownMenuSeparator />
                              <AlertDialog>
                                 <AlertDialogTrigger asChild>
                                     <DropdownMenuItem 
-                                        onSelect={(e) => e.preventDefault()} // Prevent closing dropdown
-                                        disabled={user.id === loggedInUser?.id} // Prevent deleting self
+                                        onSelect={(e) => e.preventDefault()} 
+                                        disabled={user.id === loggedInUser?.id || isUpdating[user.id]} 
                                         className="text-destructive focus:bg-destructive/10 focus:text-destructive"
                                     >
                                         <Trash2 className="mr-2 h-4 w-4" /> Delete User
@@ -266,7 +282,6 @@ export default function UserManagementPage() {
               </Table>
             </div>
           )}
-          {/* Add pagination if needed */}
         </CardContent>
       </Card>
     </AppShell>

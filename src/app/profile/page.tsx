@@ -8,9 +8,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Save, Lock, UserCircle, Loader2, ShieldQuestion } from 'lucide-react';
+import { Save, Lock, UserCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
-import { changePassword } from '@/services/breachwatch-api'; // Assuming API function exists
+import { changePassword as changePasswordApi } from '@/services/breachwatch-api'; // Renamed to avoid conflict
 import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -22,7 +22,7 @@ const passwordChangeSchema = z.object({
   confirmPassword: z.string(),
 }).refine((data) => data.newPassword === data.confirmPassword, {
   message: "New passwords don't match",
-  path: ["confirmPassword"], // Set error on confirm password field
+  path: ["confirmPassword"], 
 });
 
 type PasswordChangeFormData = z.infer<typeof passwordChangeSchema>;
@@ -37,18 +37,19 @@ export default function ProfilePage() {
   });
 
   const handlePasswordChange: SubmitHandler<PasswordChangeFormData> = async (data) => {
-    if (!user?.id) {
+    if (!user?.id) { // user.id might not be needed if backend derives from token, but good check.
       toast({ title: "Error", description: "User not identified.", variant: "destructive" });
       return;
     }
     setIsSaving(true);
     try {
-      await changePassword(user.id, data.currentPassword, data.newPassword);
+      // Call the API function from breachwatch-api.ts
+      await changePasswordApi(data.currentPassword, data.newPassword);
       toast({
         title: "Password Updated",
         description: "Your password has been successfully changed.",
       });
-      reset(); // Clear form fields after successful change
+      reset(); 
     } catch (error) {
       console.error("Failed to change password:", error);
       toast({
@@ -86,7 +87,6 @@ export default function ProfilePage() {
   return (
     <AppShell>
       <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-3">
-        {/* Profile Info Card */}
         <Card className="lg:col-span-1 shadow-lg">
            <CardHeader>
             <CardTitle className="text-xl flex items-center">
@@ -100,7 +100,7 @@ export default function ProfilePage() {
             <CardContent className="space-y-4">
                  <div className="space-y-1">
                     <Label>Full Name</Label>
-                    <p className="text-muted-foreground">{user.name || 'Not Provided'}</p>
+                    <p className="text-muted-foreground">{user.full_name || 'Not Provided'}</p>
                 </div>
                  <div className="space-y-1">
                     <Label>Email Address</Label>
@@ -110,11 +110,9 @@ export default function ProfilePage() {
                     <Label>Role</Label>
                     <p className="text-muted-foreground capitalize">{user.role}</p>
                 </div>
-                {/* Add more profile details if available */}
             </CardContent>
         </Card>
 
-        {/* Change Password Card */}
         <Card className="lg:col-span-2 shadow-lg">
           <CardHeader>
             <CardTitle className="text-xl flex items-center">
@@ -165,7 +163,6 @@ export default function ProfilePage() {
                     {errors.confirmPassword && <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>}
                 </div>
               </div>
-               {/* Add password strength indicator if desired */}
             </CardContent>
             <CardFooter className="flex justify-end border-t pt-6">
               <Button type="submit" disabled={isSaving}>

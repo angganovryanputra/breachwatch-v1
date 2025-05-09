@@ -17,7 +17,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, isLoading: authIsLoading } = useAuth(); // Get auth loading state
   const router = useRouter();
   const { toast } = useToast();
 
@@ -36,9 +36,12 @@ export default function LoginPage() {
         description: error instanceof Error ? error.message : 'Invalid credentials or server error.',
         variant: 'destructive',
       });
-      setIsLoading(false);
+    } finally {
+        setIsLoading(false);
     }
   };
+  
+  const combinedLoading = isLoading || authIsLoading;
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4 sm:p-6 md:p-8">
@@ -62,17 +65,13 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                disabled={isLoading}
+                disabled={combinedLoading}
                 className="h-11 text-base"
               />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="text-sm font-medium">Password</Label>
-                {/* Add forgot password link if needed later */}
-                {/* <Link href="/forgot-password" passHref>
-                  <a className="text-sm text-accent hover:underline">Forgot password?</a>
-                </Link> */}
               </div>
               <Input
                 id="password"
@@ -81,15 +80,15 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                disabled={isLoading}
+                disabled={combinedLoading}
                 className="h-11 text-base"
               />
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4 p-6">
-            <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
-              {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
-              {isLoading ? 'Signing In...' : 'Sign In'}
+            <Button type="submit" className="w-full h-11 text-base" disabled={combinedLoading}>
+              {combinedLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
+              {combinedLoading ? 'Signing In...' : 'Sign In'}
             </Button>
              <p className="text-center text-sm text-muted-foreground">
               Don&apos;t have an account yet?{' '}
@@ -103,4 +102,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

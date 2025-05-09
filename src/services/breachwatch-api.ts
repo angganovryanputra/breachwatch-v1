@@ -1,31 +1,53 @@
 
 // src/services/breachwatch-api.ts
-import type { SettingsFormData, DownloadedFileEntry, CrawlJob, ScheduleData, UserPreferences, User, UserStatusUpdate, UserRoleUpdate, PasswordChangePayload } from '@/types';
+import type { SettingsFormData, DownloadedFileEntry, CrawlJob, ScheduleData, UserPreferences, User, UserStatusUpdate, UserRoleUpdate, PasswordChangePayload, LoginPayload, AuthTokenResponse, RegisterPayload } from '@/types';
 import { NEXT_PUBLIC_BACKEND_API_URL } from '@/config/config';
 
 // Helper to construct full API URLs
 const getApiUrl = (path: string) => `${NEXT_PUBLIC_BACKEND_API_URL}/api/v1${path}`;
 
+// Helper to get token from localStorage
+const getToken = (): string | null => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('breachwatchAuthToken');
+  }
+  return null;
+};
+
 // Helper for making API requests
 async function apiRequest<T>(
   path: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
-  body?: any
+  body?: any,
+  isAuthRequest: boolean = false // Flag to indicate if this is an auth-related request that doesn't need token for itself
 ): Promise<T> {
   const url = getApiUrl(path);
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  
+  const token = getToken();
+  if (token && !isAuthRequest) { // Don't add token for login/register requests themselves
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const options: RequestInit = {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      // 'Authorization': `Bearer ${getToken()}`, // Implement token retrieval
-    },
+    headers,
   };
 
   if (body && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
-    options.body = JSON.stringify(body);
+    if (body instanceof FormData) {
+      // If body is FormData, don't set Content-Type, browser will do it
+      delete headers['Content-Type'];
+      options.body = body;
+    } else {
+      options.body = JSON.stringify(body);
+    }
   }
 
-  console.debug(`[API Request] ${method} ${url}`, body ? `with body: ${JSON.stringify(body)}` : '');
+
+  console.debug(`[API Request] ${method} ${url}`, body && !(body instanceof FormData) ? `with body: ${JSON.stringify(body)}` : (body instanceof FormData ? 'with FormData' : ''));
 
   try {
     const response = await fetch(url, options);
@@ -54,6 +76,10 @@ async function apiRequest<T>(
       if (method === 'GET' && response.status === 404 && (path.includes('/preferences') || path.startsWith('/users/'))) {
         console.warn(`API Info: Received 404 for ${method} ${url}. Returning null.`);
         return null as T;
+      }
+      // Handle specific 401 for auth related endpoints
+      if (response.status === 401 && (path.includes('/auth/login') || path.includes('/auth/register'))) {
+          throw new Error(errorDetails || 'Invalid credentials or user already exists.');
       }
       throw new Error(`${errorTitle}. Details: ${errorDetails}`);
     }
@@ -84,6 +110,26 @@ async function apiRequest<T>(
   }
 }
 
+
+// --- Auth Endpoints ---
+export const loginUser = async (payload: LoginPayload): Promise<AuthTokenResponse> => {
+  // FormData for OAuth2PasswordRequestForm
+  const formData = new FormData();
+  formData.append('username', payload.email); // FastAPI's OAuth2PasswordRequestForm uses 'username' for email
+  formData.append('password', payload.password);
+  return apiRequest<AuthTokenResponse>('/auth/login', 'POST', formData, true);
+};
+
+export const registerUser = async (payload: RegisterPayload): Promise<User> => {
+  return apiRequest<User>('/auth/register', 'POST', payload, true);
+};
+
+export const getCurrentUser = async (): Promise<User | null> => {
+  // This endpoint typically requires a token, so isAuthRequest is false
+  return apiRequest<User | null>('/auth/me', 'GET');
+};
+
+
 // --- CrawlJob Endpoints ---
 export interface BackendCrawlSettings {
   keywords: string[];
@@ -97,7 +143,7 @@ export interface BackendCrawlSettings {
   max_results_per_dork?: number | null;
   max_concurrent_requests_per_domain?: number | null;
   custom_user_agent?: string | null;
-  proxies?: string[] | null; // Added proxies
+  proxies?: string[] | null;
   schedule?: ScheduleData | null;
 }
 
@@ -147,15 +193,16 @@ export const deleteDownloadedFileRecord = async (fileId: string, deletePhysical:
 };
 
 // --- User Preferences Endpoints ---
-export const getUserPreferences = async (userId: string): Promise<UserPreferences | null> => {
-  return apiRequest<UserPreferences | null>(`/users/me/preferences`, 'GET'); // Corrected path
+// The backend endpoints for preferences are /users/me/preferences
+export const getUserPreferences = async (): Promise<UserPreferences | null> => {
+  return apiRequest<UserPreferences | null>(`/users/me/preferences`, 'GET');
 };
 
-export const updateUserPreferences = async (userId: string, preferences: Omit<UserPreferences, 'user_id' | 'updated_at'>): Promise<UserPreferences> => {
-  return apiRequest<UserPreferences>(`/users/me/preferences`, 'PUT', preferences); // Corrected path
+export const updateUserPreferences = async (preferences: Omit<UserPreferences, 'user_id' | 'updated_at'>): Promise<UserPreferences> => {
+  return apiRequest<UserPreferences>(`/users/me/preferences`, 'PUT', preferences);
 };
 
-// --- User Management Endpoints ---
+// --- User Management Endpoints (Admin) ---
 export const getUsers = async (skip: number = 0, limit: number = 100): Promise<User[]> => {
   return apiRequest<User[]>(`/users?skip=${skip}&limit=${limit}`);
 };
@@ -176,17 +223,16 @@ export const deleteUser = async (userId: string): Promise<void> => {
   return apiRequest<void>(`/users/${userId}`, 'DELETE');
 };
 
-// --- Password Change Endpoint ---
+// --- Password Change Endpoint (for current user) ---
 export const changePassword = async (currentPassword: string, newPassword: string): Promise<MessageResponse> => {
   const payload: PasswordChangePayload = {
     current_password: currentPassword,
     new_password: newPassword,
   };
-  // Path should be /users/me/password or similar, depends on backend auth router
   return apiRequest<MessageResponse>(`/users/me/password`, 'PUT', payload); 
 };
 
-// --- Helper Function ---
+// --- Helper Function for parsing settings ---
 export const parseSettingsForBackend = (settings: SettingsFormData): BackendCrawlSettings => {
   const parseStringList = (str: string | undefined, separator: RegExp = /,|\n/): string[] => {
     return str ? str.split(separator).map(s => s.trim()).filter(s => s) : [];
@@ -214,38 +260,18 @@ export const parseSettingsForBackend = (settings: SettingsFormData): BackendCraw
     if (type === 'one-time' && runAtDate && runAtTime) {
         try {
             const combinedDateTimeString = `${runAtDate}T${runAtTime}:00`;
-            // If timezone is provided, construct a specific Date object or send parts to backend
-            // For simplicity, assuming backend can parse "YYYY-MM-DDTHH:MM:SS" and interpret with timezone.
-            // Or, convert to UTC on client, but that can be tricky without a robust library.
-            // Backend should ideally handle local time + timezone string.
-            // For Pydantic datetime with timezone, ISO 8601 format is expected.
-            // Example: 2024-01-01T10:00:00+07:00 or 2024-01-01T03:00:00Z
-            // Let's try to create a Date object and convert to ISO string (will be UTC 'Z' or local offset)
-            // This is still a bit fragile. Best is backend taking date, time, timezone separately.
-            const dateObj = new Date(combinedDateTimeString); // This creates date in local timezone of browser
-             // To ensure it's interpreted as intended timezone then converted to UTC for backend:
-             // This needs a library like date-fns-tz.
-             // For now, if timezone is UTC or not specified, assume local is intended for UTC storage.
-             // If a specific timezone IS selected, the backend must interpret "YYYY-MM-DDTHH:MM:SS" using that timezone.
-             // A simpler robust solution: send the date string and timezone string, let backend combine and make UTC.
-             // Current backend `schedule.run_at` expects datetime.
+            const dateObj = new Date(combinedDateTimeString); 
             runAtISO = dateObj.toISOString(); 
             if (timezone && timezone !== "UTC") {
-                // This naive conversion is not robust across DST. A library is needed.
-                // Placeholder: send as is, backend to parse with timezone.
-                 console.warn("Timezone conversion on client-side for one-time schedule is tricky without a library. Sending local ISO string. Backend should interpret with provided timezone.");
-                 // A possible (but still not perfect) approach: 
-                 // runAtISO = `${combinedDateTimeString}${timezoneOffsetString(timezone)}`; // this is complex
+                 console.warn("Timezone conversion on client-side for one-time schedule is tricky. Sending local ISO string. Backend should interpret with provided timezone.");
             }
-
-
         } catch (e) {
             console.error("Error constructing date from parts:", e);
         }
     }
 
     const isValidRecurring = type === 'recurring' && !!cronExpression;
-    const isValidOneTime = type === 'one-time' && !!runAtISO; // runAtISO must be valid for one-time
+    const isValidOneTime = type === 'one-time' && !!runAtISO; 
 
     if (isValidRecurring || isValidOneTime) {
          schedule = {
@@ -272,7 +298,7 @@ export const parseSettingsForBackend = (settings: SettingsFormData): BackendCraw
     max_results_per_dork: settings.maxResultsPerDork || null, 
     max_concurrent_requests_per_domain: settings.maxConcurrentRequestsPerDomain || null, 
     custom_user_agent: settings.customUserAgent?.trim() || null, 
-    proxies: parseProxies(settings.proxies), // Parse proxies
+    proxies: parseProxies(settings.proxies), 
     schedule: schedule,
   };
 };
@@ -280,14 +306,14 @@ export const parseSettingsForBackend = (settings: SettingsFormData): BackendCraw
 // Health Check Function
 export const checkBackendHealth = async (): Promise<boolean> => {
   try {
-    const response = await fetch(getApiUrl('/'), { // Root path of backend for health check
+    const response = await fetch(getApiUrl('/'), { 
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
     if (response.ok) {
       const data = await response.json();
       console.log('Backend health check successful:', data);
-      return data.database_status === "ok" && (data.cache_status === "ok (initialized)" || data.cache_status === "ok"); // Check DB and Cache
+      return data.database_status === "ok" && (data.cache_status === "ok (initialized)" || data.cache_status === "ok");
     } else {
       console.warn('Backend health check failed (response not ok):', response.status, response.statusText);
       try { const errorData = await response.json(); console.warn('Backend health error details:', errorData); }
@@ -299,5 +325,3 @@ export const checkBackendHealth = async (): Promise<boolean> => {
     return false;
   }
 };
-
-    

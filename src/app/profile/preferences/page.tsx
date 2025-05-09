@@ -12,31 +12,33 @@ import { useToast } from '@/hooks/use-toast';
 import type { UserPreferences as UserPreferencesType } from '@/types';
 import { Save, UserCog, RotateCcw, Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
-import { getUserPreferences, updateUserPreferences } from '@/services/breachwatch-api'; // Use new API functions
+import { getUserPreferences, updateUserPreferences } from '@/services/breachwatch-api'; 
 
-const DEFAULT_PREFERENCES: Omit<UserPreferencesType, 'user_id' | 'updated_at'> = {
+const DEFAULT_PREFERENCES_VALUES: Omit<UserPreferencesType, 'user_id' | 'updated_at'> = {
   default_items_per_page: 10,
   receive_email_notifications: true,
 };
 
 export default function UserPreferencesPage() {
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [preferences, setPreferences] = useState<Omit<UserPreferencesType, 'user_id' | 'updated_at'>>(DEFAULT_PREFERENCES);
-  const [isLoading, setIsLoading] = useState(true);
+  const [preferences, setPreferences] = useState<Omit<UserPreferencesType, 'user_id' | 'updated_at'>>(DEFAULT_PREFERENCES_VALUES);
+  const [isLoadingPage, setIsLoadingPage] = useState(true); // Page specific loading state
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
-  const fetchPreferences = useCallback(async (userId: string) => {
-      setIsLoading(true);
+  const fetchPreferences = useCallback(async () => {
+      setIsLoadingPage(true);
       try {
-        const data = await getUserPreferences(userId);
+        // API now infers user ID from token
+        const data = await getUserPreferences();
         if (data) {
           setPreferences({
             default_items_per_page: data.default_items_per_page,
             receive_email_notifications: data.receive_email_notifications,
           });
         } else {
-          setPreferences(DEFAULT_PREFERENCES);
+          // If backend returns null (e.g., no preferences yet), set defaults
+          setPreferences(DEFAULT_PREFERENCES_VALUES);
         }
       } catch (error) {
         console.error("Failed to fetch user preferences:", error);
@@ -45,19 +47,19 @@ export default function UserPreferencesPage() {
           description: "Could not load your preferences. Using default values.",
           variant: "destructive",
         });
-        setPreferences(DEFAULT_PREFERENCES);
+        setPreferences(DEFAULT_PREFERENCES_VALUES);
       } finally {
-        setIsLoading(false);
+        setIsLoadingPage(false);
       }
   }, [toast]);
 
   useEffect(() => {
-    if (user?.id) {
-        fetchPreferences(user.id);
-    } else if (!isAuthLoading) {
-      // If auth is not loading and user is still null, means not logged in
-      setIsLoading(false); // Stop loading indicator
-      // Potentially show a message or redirect (AppShell might handle redirect)
+    // Fetch preferences only if user is authenticated
+    if (user && !isAuthLoading) {
+        fetchPreferences();
+    } else if (!isAuthLoading && !user) {
+      // User not logged in, stop loading, AppShell should handle redirect
+      setIsLoadingPage(false);
     }
   }, [user, isAuthLoading, fetchPreferences]);
 
@@ -66,7 +68,7 @@ export default function UserPreferencesPage() {
     const { name, value, type, checked } = e.target;
     setPreferences(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : type === 'number' ? parseInt(value, 10) || 0 : value, // Ensure number parsing
+      [name]: type === 'checkbox' ? checked : type === 'number' ? parseInt(value, 10) || 0 : value,
     }));
   };
   
@@ -79,18 +81,18 @@ export default function UserPreferencesPage() {
 
 
   const handleSavePreferences = async () => {
-    if (!user?.id) {
-      toast({ title: "Error", description: "User not identified. Cannot save preferences.", variant: "destructive" });
+    if (!user) { // Check if user object exists from auth context
+      toast({ title: "Error", description: "User not authenticated. Cannot save preferences.", variant: "destructive" });
       return;
     }
     setIsSaving(true);
     try {
-      // Prepare payload with only the necessary fields
       const payload: Omit<UserPreferencesType, 'user_id' | 'updated_at'> = {
         default_items_per_page: preferences.default_items_per_page,
         receive_email_notifications: preferences.receive_email_notifications,
       };
-      await updateUserPreferences(user.id, payload); // Pass only the updatable fields
+      // API now infers user ID from token
+      await updateUserPreferences(payload); 
       toast({
         title: "Preferences Saved",
         description: "Your preferences have been successfully updated.",
@@ -108,7 +110,7 @@ export default function UserPreferencesPage() {
   };
 
   const handleResetDefaults = () => {
-    setPreferences(DEFAULT_PREFERENCES);
+    setPreferences(DEFAULT_PREFERENCES_VALUES);
     toast({
       title: "Preferences Reset",
       description: "Settings have been reset to defaults. Click 'Save Preferences' to apply.",
@@ -116,7 +118,10 @@ export default function UserPreferencesPage() {
     });
   };
 
-  if (isLoading || isAuthLoading) {
+  // Combined loading state from auth and page-specific loading
+  const pageIsEffectivelyLoading = isLoadingPage || isAuthLoading;
+
+  if (pageIsEffectivelyLoading) {
     return (
       <AppShell>
         <div className="flex items-center justify-center h-full">
@@ -127,7 +132,7 @@ export default function UserPreferencesPage() {
     );
   }
   
-  if (!user) {
+  if (!user && !isAuthLoading) { // Ensure auth loading is finished before showing this
      return (
       <AppShell>
         <div className="flex items-center justify-center h-full">
@@ -182,8 +187,6 @@ export default function UserPreferencesPage() {
            <p className="text-sm text-muted-foreground -mt-4 ml-[3.25rem]">
               Enable or disable email notifications for critical findings or job completions. (Note: Email functionality backend is not yet implemented).
             </p>
-
-          {/* Add more preference settings here as needed */}
 
         </CardContent>
         <CardFooter className="flex justify-end space-x-3 border-t pt-6">
