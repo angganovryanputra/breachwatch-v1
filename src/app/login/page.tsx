@@ -44,7 +44,7 @@ export default function LoginPage() {
   const combinedLoading = isLoading || authIsLoading;
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4 sm:p-6 md:p-8">
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <Card className="w-full max-w-md rounded-xl bg-card shadow-2xl">
         <CardHeader className="space-y-1 text-center p-6">
            <div className="flex items-center justify-center gap-2 mb-3">
@@ -102,3 +102,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
